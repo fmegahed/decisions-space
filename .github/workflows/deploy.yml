@@ -1,0 +1,45 @@
+name: deploy
+
+# Upload the app to the Hugging Face Space when the app files change
+on:
+  push:
+    branches: [main]
+    paths:
+      - app.R
+      - "R/**"
+      - "www/**"
+      - Dockerfile
+      - README.md
+
+permissions: read-all
+
+# One upload at a time; a newer push waits for the one that runs
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the Hugging Face CLI
+        run: pip install huggingface_hub==2.3.0
+
+      # hf reads the token from HF_TOKEN. The Space gets the app files only.
+      - name: Upload to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf upload fmegahed/decisions . . \
+            --repo-type space \
+            --exclude "tests/*" \
+            --exclude ".github/*" \
+            --exclude "status/*" \
+            --exclude ".git*" \
+            --commit-message "Deploy ${GITHUB_SHA::7} from GitHub"
