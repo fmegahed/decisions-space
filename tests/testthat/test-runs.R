@@ -110,6 +110,37 @@ test_that("run_chunk() passes the inputs, references and image settings", {
   expect_null(seen$image)
 })
 
+test_that("try_rows() picks the same 5 rows, with each label", {
+  inputs <- sample_spec("textiles")$inputs
+  rows <- try_rows(inputs)
+  expect_length(rows, 5)
+  expect_false(is.unsorted(rows))
+  expect_false(anyDuplicated(rows) > 0)
+  expect_setequal(inputs$label[rows], c("nominal", "defective"))
+  expect_identical(try_rows(inputs), rows)
+  # Each of the 5 labels of the injuries once
+  injuries <- sample_spec("injuries")$inputs
+  expect_setequal(injuries$label[try_rows(injuries)], unique(injuries$label))
+})
+
+test_that("try_rows() keeps the random state of the session", {
+  set.seed(1)
+  before <- get(".Random.seed", envir = globalenv())
+  try_rows(sample_spec("textiles")$inputs)
+  expect_identical(get(".Random.seed", envir = globalenv()), before)
+})
+
+test_that("try_rows() gives all rows of a small set and 5 rows with no labels", {
+  inputs <- sample_spec("textiles")$inputs
+  expect_identical(try_rows(inputs[1:3, ]), 1:3)
+  expect_identical(try_rows(inputs[1:5, ]), 1:5)
+  inputs$label <- NA_character_
+  rows <- try_rows(inputs)
+  expect_length(rows, 5)
+  expect_false(is.unsorted(rows))
+  expect_true(all(rows %in% seq_len(nrow(inputs))))
+})
+
 test_that("chunk_files() gives the images of the rows and every reference", {
   tex <- sample_spec("textiles")
   files <- chunk_files(tex, 1:3)

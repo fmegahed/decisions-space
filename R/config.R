@@ -11,6 +11,9 @@ APP_DATE <- "24 October 2026"
 # (tests/testthat/test-config.R enforces this).
 MODEL <- "jev-1.14.0"
 
+# Day of the saved runs of the two samples (their answers record MODEL)
+SAVED_RUN_DATE <- "2026-10-23"
+
 # Commit of the decisions package that the app uses
 DECISIONS_SHA <- "b25fc9ffa7908e9a6a2d9833f080de1456c9d50a"
 

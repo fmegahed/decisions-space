@@ -53,7 +53,8 @@ expect_no_violations <- function(app) {
   expect(length(found) == 0, paste0("axe found:\n", paste(found, collapse = "\n")))
 }
 
-# Load the textiles sample and show its answers
+# Load the textiles sample and show its answers: Try on 5 of the unchanged
+# sample shows the saved run, with no call
 show_textiles_answers <- function(app) {
   app$click("sample_textiles")
   app$run_js("document.getElementById('samples_menu').open = false")
@@ -61,6 +62,18 @@ show_textiles_answers <- function(app) {
   # The run has ended and all 5 tiles are drawn
   app$wait_for_js("!document.body.classList.contains('is-running') && document.querySelectorAll('#gallery .tile').length === 5", timeout = 60000)
   app$wait_for_idle()
+  expect_match(app$get_text("#stats"), "Saved run of", fixed = TRUE)
+}
+
+# Load the injuries sample and show all its saved answers in Table view
+show_injuries_table <- function(app) {
+  app$click("sample_injuries")
+  app$run_js("document.getElementById('samples_menu').open = false")
+  app$click("run_all")
+  app$set_inputs(view = "table")
+  app$wait_for_js("!document.body.classList.contains('is-running') && document.querySelectorAll('#table table tbody tr').length === 75", timeout = 60000)
+  app$wait_for_idle()
+  expect_match(app$get_text("#stats"), "Saved run of", fixed = TRUE)
 }
 
 test_that("axe finds no violation on the start page", {
@@ -95,6 +108,7 @@ test_that("axe finds no violation on the injuries sample in Table view", {
   app$click("try5")
   app$set_inputs(view = "table")
   app$wait_for_js("!document.body.classList.contains('is-running') && document.querySelectorAll('#table table tbody tr').length === 5", timeout = 60000)
+  expect_match(app$get_text("#stats"), "Saved run of", fixed = TRUE)
   expect_no_violations(app)
 })
 
@@ -103,6 +117,18 @@ test_that("the page does not scroll sideways at 320 CSS pixels", {
   show_textiles_answers(app)
   expect_equal(app$get_js("window.innerWidth"), 320)
   expect_true(app$get_js("document.documentElement.scrollWidth <= window.innerWidth"))
+  expect_no_violations(app)
+})
+
+test_that("the full texts wrap in the table at 320 CSS pixels", {
+  app <- open_app(width = 320, height = 800)
+  show_injuries_table(app)
+  expect_true(app$get_js("document.documentElement.scrollWidth <= window.innerWidth"))
+  # The longest text (550 characters) is whole in its cell
+  lengths <- app$get_js("Array.from(document.querySelectorAll('#table tbody td:first-child')).map(function(td) { return td.textContent.trim().length; })")
+  expect_identical(max(unlist(lengths)), max(nchar(sample_spec("injuries")$inputs$text)))
+  # The column of the texts is wide enough to read (at least 16 em)
+  expect_true(app$get_js("(function() { var td = document.querySelector('#table tbody td'); return td.offsetWidth >= 16 * parseFloat(getComputedStyle(td).fontSize); })()"))
   expect_no_violations(app)
 })
 

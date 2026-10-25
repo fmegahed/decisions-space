@@ -70,14 +70,15 @@ bundle_readme <- function(spec, refs, name, has_data, date) {
 }
 
 # Write the bundle of a run to `zipfile` and return its path. `table` is the
-# answers table of answers_table().
-write_bundle <- function(spec, table, zipfile, date = Sys.Date()) {
+# answers table of answers_table(). `rows` are the rows of Try on 5 for the
+# code (NULL for all inputs).
+write_bundle <- function(spec, table, zipfile, date = Sys.Date(), rows = NULL) {
   name <- run_name(spec)
   refs <- reference_files(spec)
   dir <- tempfile("bundle")
   dir.create(dir)
   on.exit(unlink(dir, recursive = TRUE))
-  readr::write_file(paste0(run_code(spec, date), "\n"), file.path(dir, paste0(name, ".R")))
+  readr::write_file(paste0(run_code(spec, date, rows), "\n"), file.path(dir, paste0(name, ".R")))
   readr::write_file(answers_csv(table), file.path(dir, paste0(name, "-answers.csv")))
   # The setup holds the references as the prepared images; the key stays out
   references <- if (nrow(refs) > 0) spec$references[unique(refs$answer)]

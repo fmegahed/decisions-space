@@ -56,6 +56,18 @@ test_that("the bundle of an upload has the files and the references", {
   )
 })
 
+test_that("the bundle of Try on 5 holds the code of the same rows", {
+  spec <- sample_spec("textiles")
+  rows <- try_rows(spec$inputs)
+  table <- answers_table(spec, sample_answers("textiles")[rows, ], "defective")
+  zipfile <- file.path(withr::local_tempdir(), "t.zip")
+  write_bundle(spec, table, zipfile, date = as.Date("2026-11-03"), rows = rows)
+  expect_identical(
+    readr::read_file(file.path(unzip_bundle(zipfile), "textiles.R")),
+    paste0(run_code(spec, date = as.Date("2026-11-03"), rows = rows), "\n")
+  )
+})
+
 test_that("decisions reads the setup file of the bundle", {
   spec <- upload_spec(labelled = TRUE)
   dir <- unzip_bundle(bundle_of(spec))

@@ -31,6 +31,36 @@ test_that("sample_answers() follows the row order of the inputs", {
   }
 })
 
+test_that("sample_unchanged() is TRUE only for the setup of a sample", {
+  tex <- sample_spec("textiles")
+  expect_true(sample_unchanged(tex))
+  expect_true(sample_unchanged(sample_spec("injuries")))
+  # Edits of spaces only do not count
+  spaced <- tex
+  spaced$question$instructions <- paste0("  ", gsub(" ", "   ", tex$question$instructions), " ")
+  spaced$question$answers[["nominal"]] <- paste0(tex$question$answers[["nominal"]], "  ")
+  expect_true(sample_unchanged(spaced))
+  # Every other change counts
+  change <- function(path, value) {
+    s <- tex
+    s[[path]] <- value
+    s
+  }
+  q <- tex$question
+  changed <- list(
+    change("question", modifyList(q, list(instructions = paste(q$instructions, "Now.")))),
+    change("question", modifyList(q, list(answers = c(q$answers[1], defective = "A flaw.")))),
+    change("question", modifyList(q, list(answers = stats::setNames(q$answers, c("nominal", "flawed"))))),
+    change("question", modifyList(q, list(type = "score"))),
+    change("references", list(nominal = tex$references$nominal, defective = tex$references$defective[1])),
+    change("inputs", tex$inputs[-1, ]),
+    change("mode", "text"),
+    change("source", "upload")
+  )
+  for (s in changed) expect_false(sample_unchanged(s))
+  expect_false(sample_unchanged(upload_spec()))
+})
+
 test_that("SAMPLE_FACTS holds the numbers of the saved runs", {
   expect_identical(SAMPLE_FACTS$textiles, c(auc = 0.75, accuracy = 0.80))
   expect_identical(SAMPLE_FACTS$injuries, c(accuracy = 0.96))

@@ -12,6 +12,17 @@ chunk_ids <- function(n, size = CHUNK_SIZE) {
   split(seq_len(n), ceiling(seq_len(n) / size)) |> unname()
 }
 
+# The rows of Try on 5, sorted: the same rows each time. With labels, the
+# first row of each label in a shuffle comes first, then the other rows of the
+# shuffle. The seed does not change the random state of the session.
+try_rows <- function(inputs, n = 5, seed = 2026) {
+  if (nrow(inputs) <= n) return(seq_len(nrow(inputs)))
+  shuffled <- withr::with_seed(seed, sample(nrow(inputs)))
+  label <- inputs$label[shuffled]
+  first <- utils::head(shuffled[!is.na(label) & !duplicated(label)], n)
+  sort(c(first, setdiff(shuffled, first))[seq_len(n)])
+}
+
 # Names of the probability columns of decide(), one for each answer name
 pred_column <- function(answers) {
   paste0(".pred_", janitor::make_clean_names(answers, case = "none"))

@@ -47,7 +47,7 @@ docker run -p 7860:7860 -e HF_JEV_API=... decisions-space
 
 Then open <http://localhost:7860>. Replace `...` with a TypeSafe key.
 
-- `HF_JEV_API` is the TypeSafe key. Without it, the app opens, but a run shows "The demo is not available right now." The samples still show their saved answers.
+- `HF_JEV_API` is the TypeSafe key. Without it, the app opens, but a run shows "The demo is not available right now." A run of an unchanged sample still shows its saved answers.
 - `HF_USAGE_TOKEN` is a Hugging Face token that can write to the private dataset `fmegahed/decisions-space-usage`. The app keeps its daily totals there. Without it, the app cannot reach the dataset. It then keeps the totals in memory, writes a warning to the log, and loses the totals when the app restarts.
 
 The app never writes a key to a file or to the log.

@@ -105,7 +105,8 @@ app_server <- function(input, output, session, deps = app_deps()) {
   image_upload <- shiny::reactiveVal(NULL)
   csv_file <- shiny::reactiveVal(NULL)
   text_kind <- shiny::reactiveVal("paste")
-  results <- shiny::reactiveVal(NULL) # list(answers, key, saved, token of the run)
+  # list(answers, key, saved, token of the run, rows of Try on 5 or NULL for all)
+  results <- shiny::reactiveVal(NULL)
   mean_tokens <- shiny::reactiveVal(NULL) # list(fingerprint, mean)
   session_cost <- shiny::reactiveVal(0)
   usage <- shiny::reactiveVal(deps$store$read())
@@ -172,14 +173,14 @@ app_server <- function(input, output, session, deps = app_deps()) {
     rows_version(rows_version() + 1)
   }
 
-  # A sample opens with its saved answers and makes no call
+  # A sample opens with no answers and makes no call. A run of the unchanged
+  # sample then shows its saved run (see start_run()).
   load_sample <- function(id, send = c("mode", "source")) {
     sample <- sample_data(id)
     question(sample$spec$question)
     refs(unname(sample$spec$references) %||% list())
     data_mode(sample$spec$mode)
     data_source(id)
-    results(list(answers = sample$answers, key = answers_key(sample$spec), saved = TRUE))
     notice(character())
     show_setup(send)
   }
@@ -351,15 +352,18 @@ app_server <- function(input, output, session, deps = app_deps()) {
     m <- mean_tokens()
     if (!is.null(m) && identical(m$fingerprint, spec_fingerprint(s))) m$mean
   }
+  # A run of an unchanged sample shows its saved run: it costs nothing, so no
+  # limit stops it
   checks <- shiny::reactive({
     s <- spec()
+    saved <- sample_unchanged(s)
     status <- spend_status(session_cost(), usage(), deps$now())
     purrr::map(c(try5 = 5, run_all = Inf), \(k) {
       n <- min(k, nrow(s$inputs))
-      cost <- estimate_cost(s, n, mean_for(s))
-      allowed <- run_allowed(cost, status)
+      cost <- if (saved) 0 else estimate_cost(s, n, mean_for(s))
+      allowed <- if (saved) list(ok = TRUE, reason = NA_character_) else run_allowed(cost, status)
       # No inputs: the buttons stay off, and no limit is the reason
-      list(ok = allowed$ok && n > 0, reason = allowed$reason, n = n, cost = cost)
+      list(ok = allowed$ok && n > 0, reason = allowed$reason, n = n, cost = cost, saved = saved)
     })
   })
   shiny::observe({
@@ -412,13 +416,25 @@ app_server <- function(input, output, session, deps = app_deps()) {
   start_run <- function(n) {
     if (running()) return()
     s <- spec()
+    n <- min(n, nrow(s$inputs))
+    # Try on 5 takes the rows of try_rows(); Run all takes all rows (try_rows()
+    # gives all rows when n is the number of inputs). The R code repeats the
+    # rows of Try on 5 (`subset`).
+    rows <- try_rows(s$inputs, n)
+    subset <- if (n < nrow(s$inputs)) rows
+    # An unchanged sample shows the saved answers of these rows at once: no
+    # call, no cost and no write to the usage store
+    if (sample_unchanged(s)) {
+      notice(character())
+      saved <- sample_data(s$source)$answers[rows, ]
+      return(results(list(answers = saved, key = key(), saved = TRUE, rows = subset)))
+    }
     problems <- run_problems(s)
     if (length(problems) > 0) return(notice(problems))
     if (!is.null(stop_reason(deps))) return(notice(error_message(stop_reason(deps))))
     # The latest totals of all sessions decide, not the copy of this session
     latest <- deps$store$read()
     usage(latest)
-    n <- min(n, nrow(s$inputs))
     allowed <- run_allowed(
       estimate_cost(s, n, mean_for(s)), spend_status(session_cost(), latest, deps$now())
     )
@@ -426,12 +442,13 @@ app_server <- function(input, output, session, deps = app_deps()) {
     notice(character())
     job$spec <- s
     job$key <- key()
-    job$chunks <- chunk_ids(n)
+    job$chunks <- purrr::map(chunk_ids(n), \(i) rows[i])
+    job$rows <- subset
     job$done <- 0L
     job$stop <- FALSE
     job$answers <- NULL
     # The run writes its answers only while the card holds the answers that it
-    # found or wrote: a sample loaded during the run keeps its saved answers
+    # found or wrote
     job$token <- (job$token %||% 0L) + 1L
     results(utils::modifyList(results() %||% list(), list(token = job$token)))
     running(TRUE)
@@ -454,7 +471,11 @@ app_server <- function(input, output, session, deps = app_deps()) {
     if (!is.null(done$usage)) usage(done$usage)
     job$answers <- dplyr::bind_rows(job$answers, done$answers)
     shown <- identical(results()$token, job$token)
-    if (shown) results(list(answers = job$answers, key = job$key, saved = FALSE, token = job$token))
+    if (shown) {
+      results(list(
+        answers = job$answers, key = job$key, saved = FALSE, token = job$token, rows = job$rows
+      ))
+    }
     # Only calls with tokens count: a mean of 0 would make the next run look free
     tokens <- job$answers$.input_tokens
     tokens <- tokens[!is.na(tokens) & tokens > 0]
@@ -493,10 +514,12 @@ app_server <- function(input, output, session, deps = app_deps()) {
       stats::setNames(srcs, l$answers)
     )
   })
-  # A cost below one cent reads "< $0.01", not "$0.00": a run is never free
+  # A cost below one cent reads "< $0.01", not "$0.00": a run is never free.
+  # Only the saved run of an unchanged sample costs nothing.
   output$run_estimate <- shiny::renderText({
     all <- checks()$run_all
     if (all$n == 0) return("")
+    if (all$saved) return(paste(all$n, "\u00b7 saved run, no cost"))
     cost <- if (all$cost > 0 && all$cost < 0.005) "< $0.01" else sprintf("\u2248 $%.2f", all$cost)
     paste(all$n, "\u00b7", cost)
   })
@@ -522,7 +545,7 @@ app_server <- function(input, output, session, deps = app_deps()) {
     if (is.null(stats())) return(NULL)
     r <- results()
     note <- if (r$saved) {
-      paste0("Saved run, ", MODEL)
+      sprintf("Saved run of %s, %s", SAVED_RUN_DATE, MODEL)
     } else if (running()) {
       sprintf("%d of %d", nrow(r$answers), length(unlist(job$chunks)))
     }
@@ -536,9 +559,11 @@ app_server <- function(input, output, session, deps = app_deps()) {
       )
     }
   })
+  # The facts of a sample describe its full saved run, not Try on 5
   output$help_answers <- shiny::renderText({
     if (is.null(stats())) return(help_text("answers"))
-    help_note(spec(), stats(), target(), saved = results()$saved)
+    r <- results()
+    help_note(spec(), stats(), target(), saved = r$saved, full = is.null(r$rows))
   })
   output$gallery <- shiny::renderUI({
     t <- table()
@@ -558,9 +583,12 @@ app_server <- function(input, output, session, deps = app_deps()) {
   # --- Outputs: R code and bundle ---------------------------------------------
   run_date <- function() as.Date(deps$now())
   zip_name <- function() sprintf("%s-%s.zip", run_name(spec()), format(run_date()))
-  code <- shiny::reactive(run_code(spec(), run_date()))
+  # The code repeats the run on show: after Try on 5, the same rows; with no
+  # answers on show, or after Run all, all inputs
+  code_rows <- shiny::reactive(if (!is.null(table())) results()$rows)
+  code <- shiny::reactive(run_code(spec(), run_date(), code_rows()))
   output$code_summary <- shiny::renderText(
-    sprintf("R code of this run \u00b7 %d lines", code_lines(code()))
+    sprintf("R code of this run \u00b7 %d lines of code", code_lines(code()))
   )
   output$code <- shiny::renderText(code())
   output$bundle_files <- shiny::renderUI(bundle_files_ui(bundle_names(spec()), zip_name()))
@@ -573,7 +601,7 @@ app_server <- function(input, output, session, deps = app_deps()) {
   )
   output$download_bundle <- shiny::downloadHandler(
     filename = zip_name,
-    content = \(file) write_bundle(spec(), download_table(), file, run_date())
+    content = \(file) write_bundle(spec(), download_table(), file, run_date(), code_rows())
   )
 
   # --- Outputs: status ----------------------------------------------------------

@@ -146,19 +146,33 @@ references_code <- function(refs) {
   paste0("\nreferences <- list(\n", paste(by_answer$code, collapse = ",\n"), "\n)")
 }
 
-# The lines that define `texts` (or `injuries`)
-text_code <- function(spec) {
+# The comment above the inputs of Try on 5
+TRY_COMMENT <- "# The inputs of Try on 5 in the app"
+
+# The lines that keep the rows of Try on 5: x[c(3, 17), ] for a data frame,
+# x[c(3, 17)] for a vector. Empty with no rows.
+keep_code <- function(var, rows, frame = FALSE) {
+  if (length(rows) == 0) return("")
+  sprintf(
+    "\n%s\n%s <- %s[c(%s)%s]",
+    TRY_COMMENT, var, var, paste(rows, collapse = ", "), if (frame) ", " else ""
+  )
+}
+
+# The lines that define `texts` (or `injuries`). With `rows` (Try on 5), one
+# more line keeps those rows.
+text_code <- function(spec, rows = NULL) {
   if (spec$source == "injuries") {
-    return(paste(
+    return(paste0(paste(
       "set.seed(2026)",
       "# This line needs the package dplyr.",
       "injuries <- ohio_injuries |>",
       "  dplyr::slice_sample(n = 20, by = collapsed_nature_title)",
       sep = "\n"
-    ))
+    ), keep_code("injuries", rows, frame = TRUE)))
   }
   if (is.null(spec$text_column)) {
-    return('texts <- read.csv("data.csv")$text')
+    return(paste0('texts <- read.csv("data.csv")$text', keep_code("texts", rows)))
   }
   # read.csv() changes odd column names unless check.names is FALSE
   read <- if (make.names(spec$text_column) == spec$text_column) {
@@ -166,12 +180,15 @@ text_code <- function(spec) {
   } else {
     'read.csv("data.csv", check.names = FALSE)'
   }
-  paste0("texts <- ", read, "[[", r_string(spec$text_column), "]]")
+  # A CSV file keeps its own row numbers ("Row 3"): the app drops empty texts
+  file_rows <- as.integer(stringr::str_extract(spec$inputs$file[rows], "[0-9]+$"))
+  paste0("texts <- ", read, "[[", r_string(spec$text_column), "]]", keep_code("texts", file_rows))
 }
 
-# The lines that define `images` and `references`
-inputs_code <- function(spec, refs) {
-  if (spec$mode == "text") return(text_code(spec))
+# The lines that define `images` and `references`. With `rows` (Try on 5),
+# the code names only the images of those rows.
+inputs_code <- function(spec, refs, rows = NULL) {
+  if (spec$mode == "text") return(text_code(spec, rows))
   if (spec$source == "textiles") {
     by_answer <- refs |>
       dplyr::summarise(
@@ -181,13 +198,18 @@ inputs_code <- function(spec, refs) {
         ),
         .by = answer
       )
+    images <- if (is.null(rows)) {
+      'images <- file.path(folder, textiles$file[textiles$role == "input"])'
+    } else {
+      paste0(TRY_COMMENT, "\nimages <- file.path(folder, ", r_vector(spec$inputs$file[rows]), ")")
+    }
     return(paste0(
       'folder <- system.file("extdata", "textiles", package = "decisions")\n',
-      'images <- file.path(folder, textiles$file[textiles$role == "input"])\n',
+      images, "\n",
       "references <- list(\n", paste(by_answer$code, collapse = ",\n"), "\n)"
     ))
   }
-  inputs <- spec$inputs
+  inputs <- if (is.null(rows)) spec$inputs else spec$inputs[rows, ]
   images <- if (nrow(inputs) == 0) {
     'images <- list.files("images", full.names = TRUE)'
   } else {
@@ -220,8 +242,9 @@ question_code <- function(question, var) {
   )
 }
 
-# The code of a run, as one string. `date` is the day of the run.
-run_code <- function(spec, date = Sys.Date()) {
+# The code of a run, as one string. `date` is the day of the run. `rows` are
+# the rows of Try on 5 (NULL for all inputs).
+run_code <- function(spec, date = Sys.Date(), rows = NULL) {
   refs <- reference_files(spec)
   var <- question_var(spec)
   data_arg <- if (spec$mode == "text") {
@@ -232,10 +255,10 @@ run_code <- function(spec, date = Sys.Date()) {
   if (nrow(refs) > 0) data_arg <- paste0(data_arg, ", references = references")
   paste(
     sprintf("# The run of the decisions Space on %s, in R. Run it with your own key.", format(date)),
-    "library(decisions)",
+    'library(decisions) # install once: pak::pak("fmegahed/decisions")',
     "",
     paths_comment(spec, refs),
-    inputs_code(spec, refs),
+    inputs_code(spec, refs, rows),
     "",
     question_code(spec$question, var),
     "",
@@ -252,7 +275,12 @@ run_code <- function(spec, date = Sys.Date()) {
   )
 }
 
-# The number of lines of the code, for the closed card
+# The number of lines of code, for the closed card: the top-level calls, so
+# comments and blank lines do not count. Code that does not parse counts the
+# lines that are not blank and not only a comment.
 code_lines <- function(code) {
-  stringr::str_count(code, "\n") + 1L
+  calls <- tryCatch(length(parse(text = code, keep.source = FALSE)), error = \(e) NULL)
+  if (!is.null(calls)) return(calls)
+  lines <- stringr::str_trim(stringr::str_split_1(code, "\n"))
+  sum(lines != "" & !startsWith(lines, "#"))
 }

@@ -48,7 +48,7 @@ help_text <- function(key) {
       cfg$max_references
     ),
     references_score = "A score question takes no references. References attach only to Yes / no and Choice questions.",
-    answers = "The answers show here after a run. A sample shows its saved answers at once, at no cost.",
+    answers = "The answers show here after a run. A run of an unchanged sample shows its saved run, at no cost.",
     code = "The code repeats this run: the question, the references, the model and one decide() call. Run it in your own R with your TypeSafe key in TYPESAFE_API_KEY. Install the package with pak::pak(\"fmegahed/decisions\"). For your own images, read the comment on paths at the top of the code.",
     privacy = "Your images and texts go to TypeSafe (Jev). Do not upload confidential data.",
     record = "A GitHub workflow opens this app twice a day, as a visitor does. Each visit adds a row to a public file. The visit also keeps the app awake. The table shows the last 60 visits.",

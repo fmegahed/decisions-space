@@ -40,10 +40,17 @@ test_that("an unlabelled spec gives no accuracy and no AUC", {
   expect_true(is.na(st$auc))
 })
 
-test_that("text is cut at 150 characters", {
+test_that("a text of 550 characters stays whole in the table and the CSV", {
   spec <- sample_spec("injuries")
+  long <- spec$inputs$text[nchar(spec$inputs$text) == 550][1]
+  expect_false(is.na(long))
   tab <- answers_table(spec, sample_answers("injuries"), "thermal burn")
-  expect_true(all(nchar(tab$text) <= 150, na.rm = TRUE))
+  expect_true(long %in% tab$text)
+  expect_true(long %in% table_view(tab, spec)$Input)
+  csv <- readr::read_csv(
+    I(answers_csv(tab)), col_types = readr::cols(.default = "c"), trim_ws = FALSE
+  )
+  expect_true(long %in% csv$text)
 })
 
 test_that("an error never reaches the table or the CSV", {
@@ -73,4 +80,17 @@ test_that("help_note() adds the sample facts only for the saved target", {
   expect_false(stringr::str_detect(help_note(spec, list(), "nominal", saved = TRUE), "saved run"))
   spec$source <- "upload"
   expect_false(stringr::str_detect(help_note(spec, list(), "defective", saved = TRUE), "saved run"))
+})
+
+test_that("help_note() names the reuse of a saved run, and the facts only of the full run", {
+  spec <- sample_spec("textiles")
+  reuse <- "The app reuses this run to save cost. Change the question or a description to ask Jev again."
+  full <- help_note(spec, list(), "defective", saved = TRUE)
+  expect_match(full, "AUC of 0.75", fixed = TRUE)
+  expect_match(full, reuse, fixed = TRUE)
+  five <- help_note(spec, list(), "defective", saved = TRUE, full = FALSE)
+  expect_match(five, reuse, fixed = TRUE)
+  expect_no_match(five, "AUC of 0.75", fixed = TRUE)
+  expect_no_match(five, "14 local flaws", fixed = TRUE)
+  expect_no_match(help_note(spec, list(), "defective"), reuse, fixed = TRUE)
 })

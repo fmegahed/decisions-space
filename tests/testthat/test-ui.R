@@ -218,6 +218,13 @@ test_that("help_text gives text for each key", {
   expect_error(help_text("nothing"))
 })
 
+test_that("the help of the answers says that a run shows the saved run of an unchanged sample", {
+  expect_identical(
+    help_text("answers"),
+    "The answers show here after a run. A run of an unchanged sample shows its saved run, at no cost."
+  )
+})
+
 test_that("About is built from app_config()", {
   about <- help_text("about")
   cfg <- app_config()

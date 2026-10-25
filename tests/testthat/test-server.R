@@ -103,6 +103,14 @@ as_upload <- function(paths, names = basename(paths)) {
   data.frame(name = names, size = file.size(paths), type = "", datapath = paths)
 }
 
+# One word more in the instructions of sample `id`: a run then calls Jev
+ask_again <- function(session, id) {
+  session$setInputs(instructions = paste(sample_question(id)$instructions, "Now."))
+}
+
+# The note of the stats line for a saved run
+SAVED_NOTE <- "Saved run of 2026-10-23, jev-1.14.0"
+
 test_that("the app opens empty", {
   mock <- mock_decide(sample_lookup("textiles"))
   test_server(test_deps(mock), {
@@ -132,8 +140,166 @@ test_that("the empty state names the samples", {
   test_server(test_deps(), {
     expect_match(output$empty_answers$html, line, fixed = TRUE)
     session$setInputs(sample_textiles = 1)
+    expect_match(output$empty_answers$html, line, fixed = TRUE)
+    session$setInputs(run_all = 1)
     expect_no_match(output$empty_answers$html %||% "", line, fixed = TRUE)
     expect_match(output$stats$html, "Saved run", fixed = TRUE)
+  })
+})
+
+test_that("a sample loads with no answers", {
+  line <- "No answers yet. Pick a sample from Samples, or add your own images or texts."
+  mock <- mock_decide(sample_lookup("textiles"))
+  test_server(test_deps(mock), {
+    session$setInputs(sample_textiles = 1)
+    expect_identical(nrow(spec()$inputs), 46L)
+    expect_null(table())
+    expect_no_match(output$stats$html %||% "", "Saved run")
+    expect_match(output$empty_answers$html, line, fixed = TRUE)
+    expect_identical(output$help_answers, help_text("answers"))
+    session$setInputs(sample_injuries = 1)
+    expect_null(table())
+    expect_match(output$empty_answers$html, line, fixed = TRUE)
+    # The Source list too
+    session$setInputs(source = "upload")
+    session$setInputs(source = "injuries")
+    expect_identical(nrow(spec()$inputs), 75L)
+    expect_null(table())
+    expect_no_match(output$stats$html %||% "", "Saved run")
+    expect_identical(environment(mock)$calls, 0L)
+  })
+})
+
+test_that("Run all on an unchanged sample shows the saved run at no cost", {
+  mock <- mock_decide(sample_lookup("textiles"))
+  store <- usage_store_memory()
+  test_server(test_deps(mock, store), {
+    for (id in c("textiles", "injuries")) {
+      do.call(session$setInputs, stats::setNames(list(1), paste0("sample_", id)))
+      session$setInputs(run_all = 1)
+      expect_false(running())
+      expect_identical(nrow(table()), nrow(sample_spec(id)$inputs))
+      expect_identical(table_rows(output$table), nrow(sample_spec(id)$inputs))
+      expect_identical(results()$key, key())
+      expect_true(results()$saved)
+      expect_match(output$stats$html, SAVED_NOTE, fixed = TRUE)
+      expect_match(output$help_answers, SAVED_RUN_TEXT, fixed = TRUE)
+    }
+    expect_identical(nrow(table()), 75L)
+    expect_match(output$help_answers, "accuracy of 0.96", fixed = TRUE)
+    expect_identical(environment(mock)$calls, 0L)
+    expect_identical(session_cost(), 0)
+    expect_match(output$spend_meter$html, "$0.00 of $0.25", fixed = TRUE)
+    expect_identical(store$read(), empty_usage())
+  })
+})
+
+test_that("Try on 5 on an unchanged sample shows 5 saved answers", {
+  mock <- mock_decide(sample_lookup("textiles"))
+  store <- usage_store_memory()
+  test_server(test_deps(mock, store), {
+    session$setInputs(sample_textiles = 1)
+    session$setInputs(try5 = 1)
+    inputs <- sample_spec("textiles")$inputs
+    rows <- try_rows(inputs)
+    expect_identical(nrow(table()), 5L)
+    expect_setequal(table()$id, inputs$id[rows])
+    saved <- sample_answers("textiles")[rows, ]
+    expect_setequal(table()$p_target, saved$.pred_defective)
+    expect_match(output$stats$html, SAVED_NOTE, fixed = TRUE)
+    # The facts describe the full saved run, not these 5 answers
+    expect_no_match(output$help_answers, "AUC of 0.75", fixed = TRUE)
+    expect_no_match(output$help_answers, "14 local flaws", fixed = TRUE)
+    expect_match(output$help_answers, SAVED_RUN_TEXT, fixed = TRUE)
+    # The R code names the same 5 images
+    expect_true(all(stringr::str_detect(output$code, stringr::fixed(inputs$file[rows]))))
+    expect_false(any(stringr::str_detect(output$code, stringr::fixed(inputs$file[-rows]))))
+    expect_identical(environment(mock)$calls, 0L)
+    expect_identical(session_cost(), 0)
+    expect_identical(store$read(), empty_usage())
+    # Run all then shows the full saved run, with its facts and the code of all inputs
+    session$setInputs(run_all = 1)
+    expect_identical(nrow(table()), 46L)
+    expect_match(output$help_answers, "AUC of 0.75", fixed = TRUE)
+    expect_match(output$code, 'textiles$file[textiles$role == "input"]', fixed = TRUE)
+    expect_identical(environment(mock)$calls, 0L)
+  })
+})
+
+test_that("a changed instruction calls Jev", {
+  mock <- mock_decide(sample_lookup("textiles"))
+  store <- usage_store_memory()
+  test_server(test_deps(mock, store), {
+    session$setInputs(sample_textiles = 1)
+    ask_again(session, "textiles")
+    expect_false(sample_unchanged(spec()))
+    session$setInputs(try5 = 1)
+    finish_run(session, running)
+    # One call of decide() for the 5 inputs of try_rows()
+    expect_identical(environment(mock)$calls, 1L)
+    expect_identical(store$read()$calls, 5L)
+    rows <- try_rows(sample_spec("textiles")$inputs)
+    expect_setequal(table()$id, sample_spec("textiles")$inputs$id[rows])
+    expect_false(results()$saved)
+    expect_no_match(output$stats$html, "Saved run")
+    expect_gt(session_cost(), 0)
+    # The R code of the run names the same 5 images
+    expect_identical(run_stub(output$code)$image, spec()$inputs$path[rows])
+  })
+})
+
+test_that("spaces only do not count as a change", {
+  mock <- mock_decide(sample_lookup("textiles"))
+  store <- usage_store_memory()
+  test_server(test_deps(mock, store), {
+    session$setInputs(sample_textiles = 1)
+    q <- sample_question("textiles")
+    session$setInputs(
+      instructions = paste0("  ", gsub(" ", "  ", q$instructions), "  "),
+      answer_desc_1 = paste0(q$answers[["nominal"]], " ")
+    )
+    expect_false(identical(question(), q))
+    expect_identical(output$run_estimate, "46 · saved run, no cost")
+    session$setInputs(run_all = 1)
+    expect_identical(environment(mock)$calls, 0L)
+    expect_identical(nrow(table()), 46L)
+    expect_match(output$stats$html, SAVED_NOTE, fixed = TRUE)
+    expect_identical(store$read(), empty_usage())
+  })
+})
+
+test_that("a saved run works at the spending limit", {
+  mock <- mock_decide(sample_lookup("textiles"))
+  # The limit of the day is reached before the session starts
+  spent <- tibble::tibble(date = "2026-10-25", calls = 1000L, input_tokens = 47.6e6, cost = 2)
+  store <- usage_store_memory(spent)
+  test_server(test_deps(mock, store), {
+    session$setInputs(sample_textiles = 1)
+    expect_true(checks()$run_all$ok)
+    expect_true(checks()$try5$ok)
+    expect_identical(output$limits_text, "")
+    session$setInputs(run_all = 1)
+    expect_identical(nrow(table()), 46L)
+    expect_match(output$stats$html, SAVED_NOTE, fixed = TRUE)
+    expect_identical(output$limits_text, "")
+    expect_identical(environment(mock)$calls, 0L)
+    expect_identical(store$read(), spent)
+    # A change asks Jev, and the limit refuses it
+    ask_again(session, "textiles")
+    expect_false(checks()$run_all$ok)
+    expect_identical(output$limits_text, "The limit of today is reached. Try again tomorrow.")
+  })
+})
+
+test_that("Run all label on an unchanged sample", {
+  test_server(test_deps(), {
+    session$setInputs(sample_textiles = 1)
+    expect_identical(output$run_estimate, "46 · saved run, no cost")
+    session$setInputs(sample_injuries = 1)
+    expect_identical(output$run_estimate, "75 · saved run, no cost")
+    # A change gives the estimate of the cost again
+    session$setInputs(answer_desc_1 = "A body part is cut off.")
+    expect_identical(output$run_estimate, "75 · < $0.01")
   })
 })
 
@@ -148,38 +314,46 @@ test_that("Text in the empty state loads no sample", {
   })
 })
 
-test_that("a sample shows its saved answers and makes no call", {
+test_that("a run of a sample shows its saved answers and makes no call", {
   mock <- mock_decide(sample_lookup("textiles"))
   test_server(test_deps(mock), {
     session$setInputs(sample_textiles = 1)
+    session$setInputs(run_all = 1)
     expect_identical(nrow(table()), 46L)
     session$setInputs(sample_injuries = 1)
+    session$setInputs(run_all = 2)
     expect_identical(nrow(table()), 75L)
     expect_identical(table_rows(output$table), 75L)
-    # 75 x 1,000 tokens x USD 0.042 for each million is less than a cent
+    # With a change, 75 x 1,000 tokens x USD 0.042 for each million is less than a cent
+    ask_again(session, "injuries")
     expect_identical(output$run_estimate, "75 \u00b7 < $0.01")
     session$setInputs(source = "upload")
     expect_null(table())
     session$setInputs(mode = "image")
     expect_identical(spec()$source, "upload")
     session$setInputs(source = "textiles")
+    expect_null(table())
+    session$setInputs(run_all = 3)
     expect_identical(nrow(table()), 46L)
     expect_identical(table_rows(output$table), 46L)
-    expect_match(output$stats$html, "Saved run, jev-1.14.0", fixed = TRUE)
+    expect_match(output$stats$html, SAVED_NOTE, fixed = TRUE)
     expect_match(output$help_answers, "AUC of 0.75", fixed = TRUE)
     expect_length(stringr::str_extract_all(output$gallery$html, "<figure")[[1]], 46)
     expect_identical(environment(mock)$calls, 0L)
     # Every output has a value
     expect_identical(output$status_chip, "in service 5 days")
-    expect_match(output$run_estimate, "^46 \u00b7 \u2248 \\$0\\.03$")
+    expect_identical(output$run_estimate, "46 \u00b7 saved run, no cost")
     expect_match(output$spend_meter$html, "$0.00 of $0.25", fixed = TRUE)
     expect_identical(output$limits_text, "")
-    expect_match(output$code_summary, "^R code of this run \u00b7 [0-9]+ lines$")
+    expect_identical(output$code_summary, "R code of this run \u00b7 7 lines of code")
     expect_match(output$code, "decider_typesafe(\"jev-1.14.0\")", fixed = TRUE)
     expect_match(output$bundle_files$html, "textiles-2026-10-25.zip", fixed = TRUE)
     expect_match(output$answers_ui$html, "answer_name_2")
     expect_match(output$references_ui$html, "ref_defective")
     expect_identical(table_rows(output$record_table), 1L)
+    # With a change, 46 x 16,000 tokens x USD 0.042 for each million is about USD 0.03
+    ask_again(session, "textiles")
+    expect_match(output$run_estimate, "^46 \u00b7 \u2248 \\$0\\.03$")
   })
 })
 
@@ -246,6 +420,7 @@ test_that("the session folder stays until the chunk in flight ends", {
   store <- usage_store_memory()
   test_server(test_deps(mock_decide(sample_lookup("injuries")), store), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     session$close()
     expect_true(dir.exists(dir))
@@ -260,18 +435,23 @@ test_that("the session folder stays until the chunk in flight ends", {
 
 test_that("a failed chunk of a closed session writes nothing", {
   failing <- list(read = \() empty_usage(), write = \(usage) stop("The store failed."))
-  test_server(test_deps(mock_decide(sample_lookup("injuries")), failing), {
+  mock <- mock_decide(sample_lookup("injuries"))
+  test_server(test_deps(mock, failing), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     session$close()
     noise <- utils::capture.output(for (i in seq_len(50)) later::run_now(), type = "message")
     expect_identical(noise, character())
     expect_false(dir.exists(dir))
   })
+  # The chunk ran: its write failed
+  expect_identical(environment(mock)$calls, 1L)
   # In an open session, the failed chunk ends the run with a short message
   # (shiny warns about the failed task in the log)
   test_server(test_deps(mock_decide(sample_lookup("injuries")), failing), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     expect_warning(finish_run(session, running), "error occurred when invoking the ExtendedTask")
     expect_identical(output$limits_text, "The run stopped. Try again.")
@@ -311,6 +491,7 @@ test_that("a missing file ends the run with a short message and no stop", {
 test_that("editing the instructions clears the answers", {
   test_server(test_deps(), {
     session$setInputs(sample_textiles = 1)
+    session$setInputs(run_all = 1)
     expect_identical(nrow(table()), 46L)
     session$setInputs(instructions = "Is the weave flawed?")
     expect_null(table())
@@ -328,6 +509,7 @@ test_that("a change of the setup during a run stops the run", {
   mock <- mock_decide(sample_lookup("injuries"))
   test_server(test_deps(mock), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     session$setInputs(instructions = "Which injury is it?")
     finish_run(session, running)
@@ -336,11 +518,12 @@ test_that("a change of the setup during a run stops the run", {
   })
 })
 
-test_that("Run all on the injuries sample calls Jev in chunks of 10", {
+test_that("Run all on a changed injuries sample calls Jev in chunks of 10", {
   mock <- mock_decide(sample_lookup("injuries"))
   store <- usage_store_memory()
   test_server(test_deps(mock, store), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 8L)
@@ -361,12 +544,17 @@ test_that("a run over the limit of the day does not start", {
   store <- usage_store_memory()
   test_server(test_deps(mock, store), {
     session$setInputs(sample_textiles = 1)
+    session$setInputs(run_all = 1)
+    expect_identical(nrow(table()), 46L)
+    ask_again(session, "textiles")
     # Another session spends after this session started: the check reads the store again
     store$write(tibble::tibble(date = "2026-10-25", calls = 900L, input_tokens = 47e6, cost = 1.99))
-    session$setInputs(run_all = 1)
+    session$setInputs(run_all = 2)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 0L)
     expect_identical(output$limits_text, "The limit of today is reached. Try again tomorrow.")
+    # The refused run keeps the saved answers: they show again with the setup of the sample
+    session$setInputs(instructions = sample_question("textiles")$instructions)
     expect_identical(nrow(table()), 46L)
   })
 })
@@ -376,6 +564,7 @@ test_that("a credit error stops the run and the runs of the day", {
   deps <- test_deps(mock)
   test_server(deps, {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 1L)
@@ -388,15 +577,23 @@ test_that("a credit error stops the run and the runs of the day", {
   # The stop holds for every visitor of the app until the UTC date changes
   test_server(deps, {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 1L)
     expect_identical(output$limits_text, "The credit of this demo is used up. Try again later.")
+    # The saved run of the sample needs no call, so it still shows
+    session$setInputs(instructions = sample_question("injuries")$instructions)
+    session$setInputs(run_all = 1)
+    expect_identical(nrow(table()), 75L)
+    expect_match(output$stats$html, SAVED_NOTE, fixed = TRUE)
+    expect_identical(environment(mock)$calls, 1L)
   })
   tomorrow <- deps
   tomorrow$now <- \() as.POSIXct("2026-10-26 00:00:05", tz = "UTC")
   test_server(tomorrow, {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 2L)
@@ -408,6 +605,7 @@ test_that("a missing key gives a short message and no spend", {
   store <- usage_store_memory()
   test_server(test_deps(mock, store), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 1L)
@@ -425,6 +623,7 @@ test_that("Stop after the first chunk keeps its answers", {
   mock <- mock_decide(sample_lookup("injuries"))
   test_server(test_deps(mock), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     session$setInputs(stop = 1)
     finish_run(session, running)
@@ -477,17 +676,23 @@ test_that("new input content hides the answers and empties the downloads", {
   })
 })
 
-test_that("a sample loaded during a run keeps its saved answers", {
+test_that("a sample loaded during a run stops the run", {
   mock <- mock_decide(sample_lookup("injuries"))
   store <- usage_store_memory()
   test_server(test_deps(mock, store), {
     session$setInputs(sample_injuries = 1)
+    ask_again(session, "injuries")
     session$setInputs(run_all = 1)
     session$setInputs(sample_injuries = 2)
     finish_run(session, running)
+    # Nobody sees the answers of the run, so it stops; its chunk is still counted
+    expect_identical(environment(mock)$calls, 1L)
+    expect_identical(store$read()$calls, 10L)
+    expect_null(table())
+    # A run of the sample then shows its saved answers, with no call
+    session$setInputs(run_all = 2)
     expect_identical(nrow(table()), 75L)
     expect_match(output$stats$html, "Saved run", fixed = TRUE)
-    # Nobody sees the answers of the run, so it stops; its chunk is still counted
     expect_identical(environment(mock)$calls, 1L)
     expect_identical(store$read()$calls, 10L)
   })
@@ -508,12 +713,14 @@ test_that("a chunk runs in a mirai daemon when async is TRUE", {
   deps$async <- TRUE
   test_server(deps, {
     session$setInputs(sample_textiles = 1)
+    ask_again(session, "textiles")
     session$setInputs(try5 = 1)
     wait_run(session, running)
     expect_false(running())
     expect_identical(nrow(table()), 5L)
-    first <- sample_spec("textiles")$inputs$id[1:5]
-    saved <- sample_answers("textiles") |> dplyr::filter(id %in% first)
+    picked <- sample_spec("textiles")$inputs$id[try_rows(sample_spec("textiles")$inputs)]
+    expect_setequal(table()$id, picked)
+    saved <- sample_answers("textiles") |> dplyr::filter(id %in% picked)
     expect_setequal(table()$p_target, saved$.pred_defective)
     expect_identical(deps$store$read()$calls, 5L)
   })
@@ -555,11 +762,13 @@ test_that("the log has counts only: no input, no file name, no error text", {
   logged <- testthat::capture_messages({
     shiny::testServer(server_for(test_deps(mock_decide(error = secret))), {
       session$setInputs(sample_textiles = 1)
+      ask_again(session, "textiles")
       session$setInputs(try5 = 1)
       finish_run(session, running)
     })
     shiny::testServer(server_for(test_deps(mock_decide(sample_lookup("injuries")))), {
       session$setInputs(sample_injuries = 1)
+      ask_again(session, "injuries")
       session$setInputs(run_all = 1)
       finish_run(session, running)
     })
@@ -580,6 +789,7 @@ test_that("Try on 5 gives the mean tokens for the estimate of Run all", {
   mock <- mock_decide(sample_lookup("textiles"))
   test_server(test_deps(mock), {
     session$setInputs(sample_textiles = 1)
+    ask_again(session, "textiles")
     expect_match(output$run_estimate, "\\$0\\.03$")
     session$setInputs(try5 = 1)
     finish_run(session, running)
@@ -594,6 +804,7 @@ test_that("Try on 5 gives the mean tokens for the estimate of Run all", {
 test_that("a run with no tokens keeps the guess for the estimate", {
   test_server(test_deps(mock_decide()), {
     session$setInputs(sample_textiles = 1)
+    ask_again(session, "textiles")
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(nrow(table()), 5L)

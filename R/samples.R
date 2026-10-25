@@ -22,6 +22,9 @@ SAMPLE_FACTS_TEXT <- list(
   )
 )
 
+# The sentence of the Help note when the answers on show are a saved run
+SAVED_RUN_TEXT <- "The app reuses this run to save cost. Change the question or a description to ask Jev again."
+
 # The questions, copied from the vignettes images.Rmd and choosing-a-model.Rmd
 sample_question <- function(id) {
   switch(id,
@@ -106,4 +109,19 @@ sample_data <- function(id) {
   SAMPLE_CACHE[[id]] <- SAMPLE_CACHE[[id]] %||%
     list(spec = sample_spec(id), answers = sample_answers(id))
   SAMPLE_CACHE[[id]]
+}
+
+# Is the spec the setup of its sample? Then a run shows the saved run and makes
+# no call. Edits of spaces only in the instructions and the descriptions do not
+# count; every other part must be the same.
+sample_unchanged <- function(spec) {
+  if (!isTRUE(spec$source %in% c("textiles", "injuries"))) return(FALSE)
+  sample <- sample_data(spec$source)$spec
+  setup <- \(s) {
+    list(
+      s$mode, s$source, s$inputs, s$references, s$question$type, names(s$question$answers),
+      stringr::str_squish(s$question$instructions), stringr::str_squish(unname(s$question$answers))
+    )
+  }
+  identical(setup(spec), setup(sample))
 }

@@ -20,7 +20,6 @@ answers_table <- function(spec, answers, target) {
       spec$inputs |> dplyr::select(id, file, text, label),
       by = "id"
     ) |>
-    dplyr::mutate(text = stringr::str_trunc(text, 150, ellipsis = "...")) |>
     dplyr::select(
       id, file, text, answer, p_target, dplyr::starts_with("p_"),
       label, tokens, seconds, problem
@@ -64,17 +63,20 @@ alt_text <- function(row, target) {
   )
 }
 
-# What the probability is. The facts of a sample follow only for its saved
-# answers and its default target.
-help_note <- function(spec, stats, target, saved = FALSE) {
+# What the probability is. A saved run of a sample adds that the app reuses it.
+# The facts of a sample describe its full saved run: they follow only for all
+# its saved answers (`full`, not Try on 5) and its default target.
+help_note <- function(spec, stats, target, saved = FALSE, full = TRUE) {
   generic <- sprintf(
     "The probability is the raw probability of Jev for %s. It is not calibrated.",
     target
   )
-  facts <- spec$source %in% names(SAMPLE_FACTS_TEXT) && saved &&
-    identical(target, target_answer(spec$question))
-  if (!facts) return(generic)
-  paste(c(generic, SAMPLE_FACTS_TEXT[[spec$source]]), collapse = " ")
+  saved <- spec$source %in% names(SAMPLE_FACTS_TEXT) && saved
+  if (!saved) return(generic)
+  facts <- if (full && identical(target, target_answer(spec$question))) {
+    SAMPLE_FACTS_TEXT[[spec$source]]
+  }
+  paste(c(generic, facts, SAVED_RUN_TEXT), collapse = " ")
 }
 
 # The CSV text of the table for the download
