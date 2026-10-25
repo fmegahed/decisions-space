@@ -219,3 +219,65 @@ test_that("hf store: read takes the larger total for each date", {
   expect_equal(u$calls[1], 50L)
   expect_equal(u$calls[2], 20L)
 })
+
+test_that("hf store: a file with wrong columns gives the cache, no dplyr warning", {
+  withr::local_envvar(HF_USAGE_TOKEN = fake_token)
+  httr2::local_mocked_responses(function(req) {
+    httr2::response(status_code = 200, body = charToRaw("a,b\n1,2\n"))
+  })
+  store <- usage_store_hf("x/y")
+  w <- character()
+  u <- withCallingHandlers(
+    store$read(),
+    warning = function(c) {
+      w <<- c(w, conditionMessage(c))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_equal(nrow(u), 0)
+  expect_length(w, 1)
+  expect_match(w, "bad file")
+  expect_false(any(grepl("non-missing", w)))
+})
+
+test_that("hf store: a bad date or an NA total is a failed read", {
+  withr::local_envvar(HF_USAGE_TOKEN = fake_token)
+  httr2::local_mocked_responses(function(req) {
+    httr2::response(
+      status_code = 200,
+      body = charToRaw("date,calls,input_tokens,cost\nsoon,1,1,x\n")
+    )
+  })
+  expect_warning(u <- usage_store_hf("x/y")$read(), "bad file")
+  expect_equal(nrow(u), 0)
+})
+
+test_that("hf store: a timeout on read gives the cache with a safe warning", {
+  withr::local_envvar(HF_USAGE_TOKEN = fake_token)
+  httr2::local_mocked_responses(function(req) stop("Timeout was reached"))
+  expect_warning(u <- usage_store_hf("x/y")$read(), "failed")
+  expect_equal(nrow(u), 0)
+  w <- testthat::capture_warnings(usage_store_hf("x/y")$read())
+  expect_false(any(grepl("hf_FAKE", w, fixed = TRUE)))
+})
+
+test_that("hf store: the requests have a timeout", {
+  withr::local_envvar(HF_USAGE_TOKEN = fake_token)
+  seen <- NULL
+  httr2::local_mocked_responses(function(req) {
+    seen <<- req
+    httr2::response(status_code = 404)
+  })
+  usage_store_hf("x/y")$read()
+  expect_equal(seen$options$timeout_ms, USAGE_TIMEOUT * 1000)
+})
+
+test_that("run_allowed refuses when a left amount is NA", {
+  st <- list(session_left = 0.25, day_left = NA_real_, month_left = 20)
+  r <- run_allowed(0.01, st)
+  expect_false(r$ok)
+  expect_equal(r$reason, "day")
+  r <- run_allowed(0.01, list(session_left = NA_real_, day_left = 2, month_left = 20))
+  expect_equal(r$reason, "session")
+  expect_false(run_allowed(NA_real_, spend_status(0, empty_usage(), now))$ok)
+})

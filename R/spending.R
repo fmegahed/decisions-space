@@ -46,6 +46,29 @@ usage_record <- function(store, now, calls, tokens, cost) {
   usage
 }
 
+# Seconds to wait for Hugging Face (a stalled call would block every visitor)
+USAGE_TIMEOUT <- 10
+
+# Parse the text of usage.csv; NULL when the columns, a date or a total is bad
+parse_usage <- function(text) {
+  usage <- tryCatch(
+    suppressWarnings(readr::read_csv(
+      I(text),
+      col_types = readr::cols(
+        date = "c", calls = "i", input_tokens = "d", cost = "d"
+      ),
+      na = character(), show_col_types = FALSE
+    )),
+    error = \(e) NULL
+  )
+  ok <- !is.null(usage) &&
+    all(c("date", "calls", "input_tokens", "cost") %in% names(usage)) &&
+    all(grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", usage$date)) &&
+    !anyNA(usage[c("calls", "input_tokens", "cost")])
+  if (!ok) return(NULL)
+  usage[c("date", "calls", "input_tokens", "cost")]
+}
+
 # Store in memory (tests and the local mock mode)
 usage_store_memory <- function(usage = empty_usage()) {
   list(
@@ -64,15 +87,13 @@ usage_store_hf <- function(repo = USAGE_REPO,
                            token = Sys.getenv(USAGE_TOKEN_VAR)) {
   cache <- empty_usage()
   auth <- paste("Bearer", token)
-  csv_types <- readr::cols(
-    date = "c", calls = "i", input_tokens = "d", cost = "d"
-  )
 
   # Send a request; NULL when it fails. The text of a failure has no token.
   send <- function(req, what) {
     resp <- tryCatch(
       req |>
         httr2::req_headers(Authorization = auth) |>
+        httr2::req_timeout(USAGE_TIMEOUT) |>
         httr2::req_error(is_error = \(r) FALSE) |>
         httr2::req_perform(),
       error = \(e) NULL
@@ -93,9 +114,11 @@ usage_store_hf <- function(repo = USAGE_REPO,
       warning("usage store: read failed (HTTP ", status, ")", call. = FALSE)
       return(cache)
     }
-    remote <- httr2::resp_body_string(resp) |>
-      I() |>
-      readr::read_csv(col_types = csv_types, na = character())
+    remote <- parse_usage(httr2::resp_body_string(resp))
+    if (is.null(remote)) {
+      warning("usage store: read failed (bad file)", call. = FALSE)
+      return(cache)
+    }
     cache <<- usage_merge(remote, cache)
     cache
   }
@@ -142,11 +165,13 @@ spend_status <- function(session_cost, usage, now = Sys.time()) {
 }
 
 # Is a run with this estimated cost allowed? The first limit that fails wins.
+# An NA amount fails the limit, so the check fails closed.
 run_allowed <- function(estimate, status) {
+  fits <- \(left) isTRUE(estimate <= left)
   reason <- dplyr::case_when(
-    estimate > status$session_left ~ "session",
-    estimate > status$day_left ~ "day",
-    estimate > status$month_left ~ "month",
+    !fits(status$session_left) ~ "session",
+    !fits(status$day_left) ~ "day",
+    !fits(status$month_left) ~ "month",
     .default = NA_character_
   )
   list(ok = is.na(reason), reason = reason)
