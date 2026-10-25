@@ -1,0 +1,55 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions: read-all
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev libmagick++-dev
+
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with:
+          r-version: "4.6.1"
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with:
+          packages: |
+            any::shiny
+            url::https://github.com/fmegahed/decisions/archive/b25fc9ffa7908e9a6a2d9833f080de1456c9d50a.tar.gz
+            any::mirai
+            any::dplyr
+            any::purrr
+            any::stringr
+            any::tibble
+            any::readr
+            any::jsonlite
+            any::httr2
+            any::yardstick
+            any::magick
+            any::zip
+            any::testthat
+            any::shinytest2
+            any::withr
+
+      # The tests use a mock in place of Jev, so no API key is needed
+      - name: Run tests
+        run: Rscript tests/testthat.R
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the image
+        run: docker build -t decisions-space .
