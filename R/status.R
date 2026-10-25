@@ -1,6 +1,6 @@
 # Uptime record. A GitHub workflow adds a row to status/status.csv twice a day.
 # The app reads this file from GitHub and shows the days in service (chip) and
-# the last checks (Record tab).
+# the last checks (Uptime tab).
 
 # The columns of status.csv
 STATUS_COLUMNS <- c("time_utc", "http_status", "seconds", "answered", "app_version")

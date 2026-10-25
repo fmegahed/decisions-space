@@ -1,4 +1,4 @@
-# Help: the text of the intro, the help lines, the notes, the Record tab and
+# Help: the text of the intro, the help lines, the notes, the Uptime tab and
 # About. All text is in 80% ASD-STE100: short sentences, active voice, no
 # contractions. Numbers and versions come from app_config(), so the text
 # cannot drift from the behaviour.

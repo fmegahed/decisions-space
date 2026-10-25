@@ -20,10 +20,20 @@ test_that("no label or header says How to read", {
   expect_no_match(page_html(), "how to read", ignore.case = TRUE)
 })
 
-test_that("the top bar has the tabs Build, About and Record", {
+test_that("the top bar has the tabs Build, About and Uptime", {
   tabs <- find_tags(app_ui(NULL), "button") |>
     purrr::keep(\(t) identical(htmltools::tagGetAttribute(t, "role"), "tab"))
-  expect_identical(unname(purrr::map_chr(tabs, tag_text)), c("Build", "About", "Record"))
+  expect_identical(unname(purrr::map_chr(tabs, tag_text)), c("Build", "About", "Uptime"))
+})
+
+test_that("the Uptime tab names itself Uptime, not Record", {
+  panel <- find_tags(app_ui(NULL), "#panel-record")
+  expect_length(panel, 1)
+  expect_identical(tag_text(find_tags(panel[[1]], "h2")[[1]]), "Uptime")
+  region <- find_tags(panel[[1]], ".table-wrap")[[1]]
+  expect_identical(htmltools::tagGetAttribute(region, "aria-label"), "Uptime table")
+  # "record" stays only in the links to the records of the package and the project
+  expect_no_match(page_html(), ">Record<|\"Record table\"")
 })
 
 test_that("the Video button and its dialog show only when VIDEO_URL is set", {

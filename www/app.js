@@ -14,7 +14,7 @@
   }
   function byId(id) { return document.getElementById(id); }
 
-  // ---- Tabs: Build, About, Record ----------------------------------------
+  // ---- Tabs: Build, About, Uptime ----------------------------------------
 
   var TABS = ['build', 'about', 'record'];
 

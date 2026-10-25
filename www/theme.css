@@ -260,7 +260,7 @@ pre.code { margin: 0 0 12px; padding: 10px 12px; background: var(--code-bg); bor
 .file .n { font-family: var(--mono); font-size: 12px; font-weight: 600; word-break: break-all; }
 .file .d { margin-top: 3px; font-size: 12.5px; color: var(--muted); }
 
-/* --- About and Record ----------------------------------------------------------- */
+/* --- About and Uptime ----------------------------------------------------------- */
 .prose h2 { margin: 18px 0 6px; font-family: var(--serif); font-weight: 700; font-size: 18px; }
 .prose h2:first-child { margin-top: 4px; }
 .prose p, .prose li { max-width: 72ch; }

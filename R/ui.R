@@ -115,7 +115,7 @@ top_bar <- function(video) {
       shiny::div(
         role = "tablist",
         tab_button("build", "Build", TRUE), tab_button("about", "About"),
-        tab_button("record", "Record")
+        tab_button("record", "Uptime")
       )
     ),
     shiny::div(
@@ -315,7 +315,7 @@ build_panel <- function() {
   )
 }
 
-# --- About and Record tabs --------------------------------------------------
+# --- About and Uptime tabs --------------------------------------------------
 
 about_panel <- function() {
   # The About text is Markdown; its links open in a new tab
@@ -330,9 +330,9 @@ record_panel <- function() {
     class = "page card",
     shiny::div(
       class = "bd prose",
-      shiny::h2("Record"),
+      shiny::h2("Uptime"),
       shiny::p(help_text("record")),
-      scroll_region("Record table", shiny::tableOutput("record_table")),
+      scroll_region("Uptime table", shiny::tableOutput("record_table")),
       shiny::p(
         ext_link("Status file", LINKS$status), " \u00b7 ",
         ext_link("Package record", LINKS$package_record), " \u00b7 ",
