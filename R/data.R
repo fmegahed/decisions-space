@@ -41,15 +41,17 @@ make_ids <- function(file) {
   sprintf("%03d_%s", seq_along(file), clean)
 }
 
-# Unpack the safe image entries of a zip file into a new temporary folder.
-# Returns a tibble with the entry (`rel`), the file on disk (`path`) and the
-# `size`, plus the count of other files and the problems. Each entry goes into
-# its own folder, so no name can collide and nothing leaves the folder.
-unpack_zip <- function(zipfile, name) {
+# Unpack the safe image entries of a zip file into the folder `dest`. The
+# entries are counted from the listing first: when they are more than
+# `budget`, nothing is extracted. An entry over the file limit is never
+# extracted. One call to zip::unzip() extracts the rest, below `dest` only.
+# Returns the files (`rel`, `path`, `size`), the count of other files, the
+# count of images and the problems.
+unpack_zip <- function(zipfile, name, dest, budget = MAX_IMAGES) {
   entries <- tryCatch(zip::zip_list(zipfile), error = function(e) NULL)
   if (is.null(entries)) {
     return(list(
-      files = NULL, other = 0L,
+      files = NULL, other = 0L, count = 0L,
       problems = sprintf("%s could not be opened. Check that it is a zip file.", name)
     ))
   }
@@ -68,21 +70,15 @@ unpack_zip <- function(zipfile, name) {
   is_img <- is_image_name(kept$filename)
   too_big <- is_img & kept$uncompressed_size > mb_bytes(MAX_FILE_MB)
   use <- kept |> dplyr::filter(is_img, !too_big)
-  dest <- tempfile("zip")
-  dir.create(dest)
-  files <- use |>
-    dplyr::mutate(
-      path = purrr::map2_chr(filename, seq_along(filename), \(f, i) {
-        zip::unzip(zipfile, files = f, exdir = file.path(dest, i), junkpaths = TRUE)
-        list.files(file.path(dest, i), full.names = TRUE)[1]
-      }),
-      size = uncompressed_size
-    ) |>
+  problems <- sprintf("%s was skipped. A file can be at most %s MB.", basename(kept$rel[too_big]), MAX_FILE_MB)
+  out <- list(files = NULL, other = sum(!is_img), count = nrow(use), problems = problems)
+  if (nrow(use) == 0 || nrow(use) > budget) return(out)
+  dir.create(dest, recursive = TRUE, showWarnings = FALSE)
+  zip::unzip(zipfile, files = use$filename, exdir = dest)
+  out$files <- use |>
+    dplyr::mutate(path = file.path(dest, filename), size = uncompressed_size) |>
     dplyr::select(rel, path, size)
-  list(
-    files = files, other = sum(!is_img),
-    problems = sprintf("%s was skipped. A file can be at most %s MB.", basename(kept$rel[too_big]), MAX_FILE_MB)
-  )
+  out
 }
 
 # Sentence for the files that are not images
@@ -92,21 +88,37 @@ not_image_problem <- function(n) {
   sprintf("%d files are not images and were skipped. Use JPEG, PNG or WebP.", n)
 }
 
+# Copy a loose upload into `dir` (one subfolder for each upload); returns the new path
+keep_upload <- function(path, name, dir, i) {
+  dest <- file.path(dir, sprintf("file%03d", i))
+  dir.create(dest, recursive = TRUE, showWarnings = FALSE)
+  file.copy(path, file.path(dest, basename(name)))
+  file.path(dest, basename(name))
+}
+
 # Images from the files of shiny::fileInput() (columns `name`, `datapath`).
-# A folder in a zip file gives the label; loose files have no label.
-read_images <- function(files) {
-  if (is.null(files) || nrow(files) == 0) return(list(inputs = empty_inputs(), problems = character()))
+# A folder in a zip file gives the label; loose files have no label. Every
+# file is written below `dir`, so the caller can delete `dir` at the end of
+# the session. The result carries `dir`.
+read_images <- function(files, dir = tempfile("upload")) {
+  if (is.null(files) || nrow(files) == 0) {
+    return(list(inputs = empty_inputs(), problems = character(), dir = dir))
+  }
   problems <- character()
   other <- 0L
-  found <- purrr::map2(files$name, files$datapath, \(name, path) {
+  loaded <- 0L
+  counted <- 0L
+  found <- purrr::pmap(list(files$name, files$datapath, seq_len(nrow(files))), \(name, path, i) {
     if (tolower(tools::file_ext(name)) == "zip") {
       if (file.size(path) > mb_bytes(MAX_ZIP_MB)) {
         problems <<- c(problems, sprintf("%s was skipped. A zip file can be at most %s MB.", name, MAX_ZIP_MB))
         return(NULL)
       }
-      zipped <- unpack_zip(path, name)
+      zipped <- unpack_zip(path, name, file.path(dir, sprintf("zip%03d", i)), MAX_IMAGES - loaded)
       problems <<- c(problems, zipped$problems)
       other <<- other + zipped$other
+      counted <<- counted + zipped$count
+      loaded <<- loaded + NROW(zipped$files)
       return(zipped$files)
     }
     if (is_junk(name)) return(NULL)
@@ -118,18 +130,21 @@ read_images <- function(files) {
       problems <<- c(problems, sprintf("%s was skipped. A file can be at most %s MB.", name, MAX_FILE_MB))
       return(NULL)
     }
-    tibble::tibble(rel = name, path = path, size = file.size(path))
+    counted <<- counted + 1L
+    if (loaded >= MAX_IMAGES) return(NULL)
+    loaded <<- loaded + 1L
+    tibble::tibble(rel = name, path = keep_upload(path, name, dir, i), size = file.size(path))
   })
   images <- dplyr::bind_rows(found)
   problems <- c(problems, not_image_problem(other))
-  if (nrow(images) > MAX_IMAGES) {
+  if (counted > MAX_IMAGES) {
     problems <- c(problems, sprintf(
       "A run can have at most %d images. This upload has %d. Upload fewer images.",
-      MAX_IMAGES, nrow(images)
+      MAX_IMAGES, counted
     ))
     images <- images[0, ]
   }
-  if (nrow(images) == 0) return(list(inputs = empty_inputs(), problems = problems))
+  if (nrow(images) == 0) return(list(inputs = empty_inputs(), problems = problems, dir = dir))
   parts <- strsplit(images$rel, "/", fixed = TRUE)
   file <- purrr::map_chr(parts, utils::tail, 1)
   label <- purrr::map_chr(parts, \(p) if (length(p) >= 2) p[1] else NA_character_)
@@ -137,27 +152,30 @@ read_images <- function(files) {
     id = make_ids(file), path = images$path, text = NA_character_,
     file = file, label = label
   )
-  list(inputs = inputs, problems = problems)
+  list(inputs = inputs, problems = problems, dir = dir)
 }
 
-# Reference images: loose image files, at most MAX_REFERENCES
-read_references <- function(files) {
-  if (is.null(files) || nrow(files) == 0) return(list(paths = character(), problems = character()))
+# Reference images: loose image files, at most MAX_REFERENCES, copied below `dir`
+read_references <- function(files, dir = tempfile("upload")) {
+  if (is.null(files) || nrow(files) == 0) {
+    return(list(paths = character(), problems = character(), dir = dir))
+  }
   is_img <- is_image_name(files$name)
   too_big <- is_img & file.size(files$datapath) > mb_bytes(MAX_FILE_MB)
   problems <- c(
     sprintf("%s was skipped. A file can be at most %s MB.", files$name[too_big], MAX_FILE_MB),
     not_image_problem(sum(!is_img))
   )
-  paths <- files$datapath[is_img & !too_big]
-  if (length(paths) > MAX_REFERENCES) {
+  use <- which(is_img & !too_big)
+  if (length(use) > MAX_REFERENCES) {
     problems <- c(problems, sprintf(
       "You can add at most %d references for each answer. The app used the first %d.",
       MAX_REFERENCES, MAX_REFERENCES
     ))
-    paths <- paths[seq_len(MAX_REFERENCES)]
+    use <- use[seq_len(MAX_REFERENCES)]
   }
-  list(paths = paths, problems = problems)
+  paths <- purrr::map_chr(use, \(i) keep_upload(files$datapath[i], files$name[i], dir, i))
+  list(paths = paths, problems = problems, dir = dir)
 }
 
 # Inputs from texts: skip the texts that are too long, and stop when there
@@ -224,12 +242,19 @@ read_csv_text <- function(path, n_max = Inf) {
 
 # The column names of a CSV file
 csv_columns <- function(path) {
+  if (file.size(path) > mb_bytes(MAX_FILE_MB)) return(character())
   names(read_csv_text(path, n_max = 0))
 }
 
 # Inputs from a CSV file: the text column, and optionally the label column.
 # Empty texts are dropped with a count; blank labels stay unlabelled.
-read_text_csv <- function(path, text_col, label_col = NULL) {
+read_text_csv <- function(path, text_col, label_col = NULL, name = basename(path)) {
+  if (file.size(path) > mb_bytes(MAX_FILE_MB)) {
+    return(list(
+      inputs = empty_inputs(),
+      problems = sprintf("%s was skipped. A file can be at most %s MB.", name, MAX_FILE_MB)
+    ))
+  }
   data <- read_csv_text(path)
   if (is.null(data)) {
     return(list(inputs = empty_inputs(), problems = "The CSV file could not be read."))
