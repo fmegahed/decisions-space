@@ -72,3 +72,40 @@ test_that("estimate_cost() uses the guess, then the measured mean", {
 test_that("chunk_ids() makes chunks of 10", {
   expect_identical(lengths(chunk_ids(46)), c(10L, 10L, 10L, 10L, 6L))
 })
+
+test_that("make_decider() reads the key only through the credentials function", {
+  withr::local_envvar(HF_JEV_API = "fake-key-1234567890")
+  decider <- make_decider()
+  creds <- decider@credentials
+  expect_identical(creds(), "fake-key-1234567890")
+  shown <- utils::capture.output(print(decider))
+  expect_false(any(stringr::str_detect(shown, "fake-key-1234567890")))
+})
+
+test_that("the real decide() with an empty key gives config rows and no request", {
+  withr::local_envvar(HF_JEV_API = "", TYPESAFE_API_KEY = "")
+  httr2::local_mocked_responses(function(req) stop("no network in tests"))
+  out <- run_chunk(sample_spec("injuries"), 1:2)
+  expect_identical(nrow(out), 2L)
+  expect_identical(classify_error(out$.error), c("config", "config"))
+})
+
+test_that("run_chunk() passes the inputs, references and image settings", {
+  seen <- NULL
+  capture <- function(...) {
+    seen <<- list(...)
+    mock_decide()(...)
+  }
+  tex <- sample_spec("textiles")
+  run_chunk(tex, 1:10, capture)
+  expect_identical(seen$image, tex$inputs$path[1:10])
+  expect_null(seen$text)
+  expect_identical(seen$references, tex$references)
+  expect_identical(seen$max_size, IMAGE_SETTINGS$max_size)
+  expect_identical(seen$upscale, IMAGE_SETTINGS$upscale)
+  expect_identical(seen$crop, IMAGE_SETTINGS$crop)
+  inj <- sample_spec("injuries")
+  run_chunk(inj, 1:10, capture)
+  expect_identical(seen$text, inj$inputs$text[1:10])
+  expect_null(seen$image)
+})

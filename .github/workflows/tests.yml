@@ -33,6 +33,7 @@ jobs:
             any::stringr
             any::tibble
             any::readr
+            any::janitor
             any::jsonlite
             any::httr2
             any::yardstick
