@@ -4,6 +4,6 @@
 APP_ROOT <- normalizePath(
   if (file.exists("app.R")) "." else file.path("..", "..")
 )
-for (r_file in c("config.R", "spec.R", "samples.R", "data.R", "runs.R", "spending.R")) {
+for (r_file in c("config.R", "spec.R", "samples.R", "data.R", "runs.R", "spending.R", "answers.R")) {
   source(file.path(APP_ROOT, "R", r_file), local = FALSE)
 }

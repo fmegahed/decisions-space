@@ -12,13 +12,18 @@ chunk_ids <- function(n, size = CHUNK_SIZE) {
   split(seq_len(n), ceiling(seq_len(n) / size)) |> unname()
 }
 
+# Names of the probability columns of decide(), one for each answer name
+pred_column <- function(answers) {
+  paste0(".pred_", janitor::make_clean_names(answers, case = "none"))
+}
+
 # Columns of a decide() output with NA answers, one row for each input.
 # The column names follow decide(): .pred_<cleaned answer name>.
 empty_answers <- function(question, n, error = "config") {
   answers <- names(question$answers)
   cols <- stats::setNames(
     rep(list(rep(NA_real_, n)), length(answers)),
-    paste0(".pred_", janitor::make_clean_names(answers, case = "none"))
+    pred_column(answers)
   )
   out <- tibble::tibble(
     .pred_class = factor(rep(NA_character_, n), levels = answers),

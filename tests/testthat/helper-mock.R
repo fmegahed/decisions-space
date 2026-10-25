@@ -27,7 +27,7 @@ mock_decide <- function(lookup = NULL, error = NULL, abort = FALSE) {
     )
     blank <- empty_answers(question, length(inputs), error = error %||% NA_character_)
     if (!is.null(error)) return(blank)
-    first <- paste0(".pred_", janitor::make_clean_names(names(question$answers)[1], case = "none"))
+    first <- pred_column(names(question$answers)[1])
     fallback <- blank |>
       dplyr::mutate(
         dplyr::across(dplyr::starts_with(".pred_") & !".pred_class", \(x) 0),
