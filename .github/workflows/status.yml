@@ -1,0 +1,44 @@
+name: status
+
+# Twice a day, off the hour. The visit also keeps the Space awake.
+on:
+  schedule:
+    - cron: "17 5,17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Request the app and add a row
+        run: |
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # A failed request (timeout, DNS) gives status 000 and does not fail the job
+          result=$(curl -s -o page.html -w "%{http_code} %{time_total}" --max-time 180 https://fmegahed-decisions.hf.space/ || true)
+          code=$(echo "$result" | cut -d' ' -f1)
+          secs=$(echo "$result" | cut -d' ' -f2)
+          code=${code:-000}
+          secs=${secs:-0}
+          # The version comes from <meta name="app-version" content="...">
+          version=""
+          if [ -s page.html ]; then
+            version=$(grep -o '<meta name="app-version"[^>]*>' page.html | head -n 1 | sed -n 's/.*content="\([^"]*\)".*/\1/p')
+          fi
+          if [ "$code" = "200" ] && [ -n "$version" ]; then answered=true; else answered=false; fi
+          mkdir -p status
+          [ -f status/status.csv ] || echo "time_utc,http_status,seconds,answered,app_version" > status/status.csv
+          echo "$now,$code,$secs,$answered,$version" >> status/status.csv
+
+      - name: Commit the file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add status/status.csv
+          git commit -m "Status check $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git pull --rebase
+          git push
