@@ -148,13 +148,14 @@ group <- function(num, title, ...) {
 }
 
 sidebar <- function() {
-  textiles <- sample_question("textiles")
   shiny::tags$aside(
     class = "card sidebar", `aria-label` = "Setup",
     group(
       "01", "Data",
       seg_radio("mode", "Kind of data", c(Images = "image", Text = "text")),
-      shiny::selectInput("source", sr("Source"), SOURCE_CHOICES, selectize = FALSE),
+      shiny::selectInput(
+        "source", sr("Source"), source_choices("image"), selected = "upload", selectize = FALSE
+      ),
       shiny::conditionalPanel(
         "input.source == 'upload' && input.mode == 'image'",
         upload_input("upload_images", "Images or zip file", c(IMAGE_ACCEPT, ".zip"), multiple = TRUE)
@@ -172,9 +173,9 @@ sidebar <- function() {
       "02", "Question",
       seg_radio(
         "qtype", "Type of question",
-        c("Yes / no" = "noul", Choice = "choice", Score = "score"), selected = textiles$type
+        c("Yes / no" = "noul", Choice = "choice", Score = "score"), selected = START_QUESTION$type
       ),
-      shiny::textAreaInput("instructions", "Instructions", textiles$instructions, rows = 2),
+      shiny::textAreaInput("instructions", "Instructions", START_QUESTION$instructions, rows = 2),
       shiny::uiOutput("answers_ui"),
       help_line(help_text("question"))
     ),
@@ -253,6 +254,7 @@ answers_card <- function() {
     shiny::div(
       class = "bd",
       shiny::uiOutput("stats"),
+      shiny::uiOutput("empty_answers"),
       note_box(shiny::span(id = "help_answers", class = "shiny-text-output", help_text("answers"))),
       shiny::conditionalPanel("input.view == 'gallery'", shiny::uiOutput("gallery")),
       shiny::conditionalPanel(

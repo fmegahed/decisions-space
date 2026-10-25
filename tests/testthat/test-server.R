@@ -103,10 +103,55 @@ as_upload <- function(paths, names = basename(paths)) {
   data.frame(name = names, size = file.size(paths), type = "", datapath = paths)
 }
 
+test_that("the app opens empty", {
+  mock <- mock_decide(sample_lookup("textiles"))
+  test_server(test_deps(mock), {
+    expect_identical(spec()$source, "upload")
+    expect_identical(spec()$mode, "image")
+    expect_identical(nrow(spec()$inputs), 0L)
+    expect_identical(question()$type, "choice")
+    expect_identical(question()$instructions, "")
+    expect_identical(names(question()$answers), c("answer 1", "answer 2"))
+    expect_identical(unname(question()$answers), c("", ""))
+    expect_length(refs(), 0)
+    expect_null(table())
+    expect_no_match(output$stats$html %||% "", "Saved run")
+    expect_identical(environment(mock)$calls, 0L)
+    expect_false(checks()$try5$ok)
+    expect_false(checks()$run_all$ok)
+    expect_identical(output$run_estimate, "")
+    # Every output renders in the empty state
+    for (id in c("table", "gallery", "code", "code_summary", "bundle_files", "spend_meter", "limits_text")) {
+      expect_no_error(output[[id]])
+    }
+  })
+})
+
+test_that("the empty state names the samples", {
+  line <- "No answers yet. Pick a sample from Samples, or add your own images or texts."
+  test_server(test_deps(), {
+    expect_match(output$empty_answers$html, line, fixed = TRUE)
+    session$setInputs(sample_textiles = 1)
+    expect_no_match(output$empty_answers$html %||% "", line, fixed = TRUE)
+    expect_match(output$stats$html, "Saved run", fixed = TRUE)
+  })
+})
+
+test_that("Text in the empty state loads no sample", {
+  mock <- mock_decide(sample_lookup("textiles"))
+  test_server(test_deps(mock), {
+    session$setInputs(mode = "text")
+    expect_identical(spec()$source, "upload")
+    expect_identical(spec()$mode, "text")
+    expect_no_match(output$stats$html %||% "", "Saved run")
+    expect_identical(environment(mock)$calls, 0L)
+  })
+})
+
 test_that("a sample shows its saved answers and makes no call", {
   mock <- mock_decide(sample_lookup("textiles"))
   test_server(test_deps(mock), {
-    # The page opens with the textile sample
+    session$setInputs(sample_textiles = 1)
     expect_identical(nrow(table()), 46L)
     session$setInputs(sample_injuries = 1)
     expect_identical(nrow(table()), 75L)
@@ -142,6 +187,7 @@ test_that("an observer never sends its own input back to the page", {
   # The page answers each update with its value. If the server sent the input
   # that it reacts to, two crossing updates would flip the input forever.
   test_server(test_deps(), {
+    session$setInputs(sample_textiles = 1)
     sent <- new.env()
     session$sendInputMessage <- function(inputId, message) sent$ids <- c(sent$ids, inputId)
     session$setInputs(mode = "text")
@@ -240,6 +286,7 @@ test_that("a missing file ends the run with a short message and no stop", {
   few <- image_zip(3, "few.zip")
   ref <- tiny_jpg(file.path(withr::local_tempdir(), "ref.jpg"))
   test_server(deps, {
+    session$setInputs(sample_textiles = 1)
     session$setInputs(source = "upload")
     session$setInputs(upload_images = as_upload(many))
     session$setInputs(ref_defective = as_upload(ref))
@@ -340,6 +387,7 @@ test_that("a credit error stops the run and the runs of the day", {
   })
   # The stop holds for every visitor of the app until the UTC date changes
   test_server(deps, {
+    session$setInputs(sample_injuries = 1)
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 1L)
@@ -348,6 +396,7 @@ test_that("a credit error stops the run and the runs of the day", {
   tomorrow <- deps
   tomorrow$now <- \() as.POSIXct("2026-10-26 00:00:05", tz = "UTC")
   test_server(tomorrow, {
+    session$setInputs(sample_injuries = 1)
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 2L)
@@ -404,7 +453,7 @@ test_that("new input content hides the answers and empties the downloads", {
       expect_identical(nrow(download_table()), 0L)
     }
     session$setInputs(mode = "text")
-    session$setInputs(source = "upload")
+    session$setInputs(source = "upload", instructions = "Which text is it?")
     # A new paste
     session$setInputs(paste_text = "One.\n\nTwo.")
     run_shows(2L)
@@ -458,6 +507,7 @@ test_that("a chunk runs in a mirai daemon when async is TRUE", {
   deps <- test_deps(mock)
   deps$async <- TRUE
   test_server(deps, {
+    session$setInputs(sample_textiles = 1)
     session$setInputs(try5 = 1)
     wait_run(session, running)
     expect_false(running())
@@ -482,7 +532,7 @@ test_that("a new upload during a run waits for the chunk and does not stop the d
   deps <- test_deps(slow)
   deps$async <- TRUE
   test_server(deps, {
-    session$setInputs(source = "upload")
+    session$setInputs(source = "upload", instructions = "Is the part flawed?")
     session$setInputs(upload_images = as_upload(first))
     old <- image_upload()$dir
     session$setInputs(run_all = 1)
@@ -543,6 +593,7 @@ test_that("Try on 5 gives the mean tokens for the estimate of Run all", {
 
 test_that("a run with no tokens keeps the guess for the estimate", {
   test_server(test_deps(mock_decide()), {
+    session$setInputs(sample_textiles = 1)
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(nrow(table()), 5L)
@@ -556,6 +607,7 @@ test_that("the message line holds the latest notice, in full sentences", {
   csv <- withr::local_tempfile(fileext = ".csv")
   writeLines(c("review,tag", "Fine,a", ",b"), csv)
   test_server(test_deps(), {
+    session$setInputs(sample_textiles = 1)
     session$setInputs(import_file = as_upload(bad, "x.json"))
     expect_identical(output$limits_text, "This file was not made by this app.")
     session$setInputs(source = "upload")
@@ -610,6 +662,9 @@ test_that("an upload of labelled images matches the folders to the answers", {
   mock <- mock_decide()
   test_server(test_deps(mock), {
     session$setInputs(mode = "image", source = "upload")
+    session$setInputs(
+      instructions = "Is the part flawed?", answer_name_1 = "defective", answer_name_2 = "nominal"
+    )
     session$setInputs(upload_images = as_upload(zf))
     expect_identical(spec()$name, "parts")
     expect_identical(spec()$inputs$label, c("defective", "nominal", NA))
@@ -628,8 +683,7 @@ test_that("texts come from the paste box or from a CSV file", {
   writeLines(c("review,tag", "I want my money back,true", "Thanks a lot,false"), csv)
   test_server(test_deps(), {
     session$setInputs(mode = "text")
-    expect_identical(spec()$source, "injuries")
-    session$setInputs(source = "upload")
+    expect_identical(spec()$source, "upload")
     session$setInputs(paste_text = "One text.\n\nTwo texts.")
     expect_identical(spec()$inputs$text, c("One text.", "Two texts."))
     expect_null(spec()$text_column)

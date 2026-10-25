@@ -148,9 +148,24 @@ test_that("the page has the input and output ids of the server", {
   expect_match(html, 'value="score"', fixed = TRUE)
   expect_match(html, 'value="gallery"', fixed = TRUE)
   expect_match(html, 'value="table"', fixed = TRUE)
-  for (source in c("textiles", "injuries", "upload")) {
+  # The first page lists the sources of Images; the server sends the others with Text
+  for (source in c("textiles", "upload")) {
     expect_match(html, sprintf('value="%s"', source), fixed = TRUE)
   }
+})
+
+test_that("the first HTML holds the start state, so that no update is sent at the start", {
+  ui <- app_ui(NULL)
+  html <- page_html(ui)
+  expect_match(html, '<option value="upload" selected>', fixed = TRUE)
+  expect_match(html, '<input type="radio" name="qtype" value="choice" checked="checked"', fixed = TRUE)
+  expect_match(html, '<input type="radio" name="mode" value="image" checked="checked"', fixed = TRUE)
+  expect_identical(tag_text(find_tags(ui, "textarea#instructions")[[1]]), "")
+  # The sidebar no longer reads the textile question
+  expect_no_match(page_html(ui), "woven pattern", fixed = TRUE)
+  # The line of the empty state sits outside the Help note
+  expect_length(find_tags(ui, "#empty_answers"), 1)
+  expect_length(find_tags(ui, ".howto #empty_answers"), 0)
 })
 
 test_that("the Help switch is a checkbox with the role switch and the label Help", {

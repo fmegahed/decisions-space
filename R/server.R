@@ -98,10 +98,10 @@ app_server <- function(input, output, session, deps = app_deps()) {
   }
 
   # --- State --------------------------------------------------------------------
-  question <- shiny::reactiveVal()
+  question <- shiny::reactiveVal(START_QUESTION)
   refs <- shiny::reactiveVal(list()) # reference paths, one element for each answer
   data_mode <- shiny::reactiveVal("image")
-  data_source <- shiny::reactiveVal("textiles")
+  data_source <- shiny::reactiveVal("upload") # the page opens empty
   image_upload <- shiny::reactiveVal(NULL)
   csv_file <- shiny::reactiveVal(NULL)
   text_kind <- shiny::reactiveVal("paste")
@@ -183,8 +183,8 @@ app_server <- function(input, output, session, deps = app_deps()) {
     notice(character())
     show_setup(send)
   }
-  # The page opens with Images and the textile sample; only the choices of the source change
-  shiny::isolate(load_sample("textiles", send = "source"))
+  # The page opens empty: Images, your own data, no sample. The first HTML of
+  # the page holds the same values, so the server sends no update at the start.
 
   # --- Data -------------------------------------------------------------------
   shiny::observeEvent(input$sample_textiles, load_sample("textiles"))
@@ -357,7 +357,9 @@ app_server <- function(input, output, session, deps = app_deps()) {
     purrr::map(c(try5 = 5, run_all = Inf), \(k) {
       n <- min(k, nrow(s$inputs))
       cost <- estimate_cost(s, n, mean_for(s))
-      c(run_allowed(cost, status), list(n = n, cost = cost))
+      allowed <- run_allowed(cost, status)
+      # No inputs: the buttons stay off, and no limit is the reason
+      list(ok = allowed$ok && n > 0, reason = allowed$reason, n = n, cost = cost)
     })
   })
   shiny::observe({
@@ -494,13 +496,14 @@ app_server <- function(input, output, session, deps = app_deps()) {
   # A cost below one cent reads "< $0.01", not "$0.00": a run is never free
   output$run_estimate <- shiny::renderText({
     all <- checks()$run_all
+    if (all$n == 0) return("")
     cost <- if (all$cost > 0 && all$cost < 0.005) "< $0.01" else sprintf("\u2248 $%.2f", all$cost)
     paste(all$n, "\u00b7", cost)
   })
   output$spend_meter <- shiny::renderUI(spend_meter_ui(session_cost()))
   output$limits_text <- shiny::renderText({
     all <- checks()$run_all
-    refused <- if (!all$ok) limit_message(all$reason)
+    refused <- if (!all$ok && !is.na(all$reason)) limit_message(all$reason)
     sentences <- unique(c(notice(), data()$problems, matched()$problems, refused))
     paste(stringr::str_replace(sentences, "([^.!?])$", "\\1."), collapse = " ")
   })
@@ -524,6 +527,14 @@ app_server <- function(input, output, session, deps = app_deps()) {
       sprintf("%d of %d", nrow(r$answers), length(unlist(job$chunks)))
     }
     stats_ui(stats(), spec()$mode, note)
+  })
+  output$empty_answers <- shiny::renderUI({
+    if (is.null(table())) {
+      shiny::p(
+        class = "empty",
+        "No answers yet. Pick a sample from Samples, or add your own images or texts."
+      )
+    }
   })
   output$help_answers <- shiny::renderText({
     if (is.null(stats())) return(help_text("answers"))

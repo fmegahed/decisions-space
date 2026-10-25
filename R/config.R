@@ -37,6 +37,11 @@ MAX_DESCRIPTION <- 300
 # Number of answers for a choice question and of levels for a score question
 ANSWER_RANGE <- list(choice = c(2, 6), score = c(2, 5))
 
+# The question of a new session: a choice of two answers, as the Add answer button names them
+START_QUESTION <- list(
+  type = "choice", instructions = "", answers = c(`answer 1` = "", `answer 2` = "")
+)
+
 # Reference images for each answer, and inputs for each call to Jev
 MAX_REFERENCES <- 2
 CHUNK_SIZE <- 10
