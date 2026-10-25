@@ -57,6 +57,12 @@ test_that("the code block takes keyboard focus and has a name", {
   expect_identical(htmltools::tagGetAttribute(code[[1]], "aria-label"), "R code of this run")
 })
 
+test_that("the R code card has a heading that names it", {
+  card <- find_tags(app_ui(NULL), "section.code-card")[[1]]
+  expect_identical(htmltools::tagGetAttribute(card, "aria-labelledby"), "code_title")
+  expect_length(find_tags(card, "h2#code_title"), 1)
+})
+
 test_that("the R code card is a closed details element with no control in its summary", {
   details <- find_tags(app_ui(NULL), "details.code-details")
   expect_length(details, 1)

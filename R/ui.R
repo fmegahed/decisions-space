@@ -274,7 +274,9 @@ code_card <- function() {
     class = "code", tabindex = "0", role = "region", `aria-label` = "R code of this run"
   )
   shiny::tags$section(
-    class = "card code-card", `aria-label` = "R code",
+    class = "card code-card", `aria-labelledby` = "code_title",
+    # A heading for screen readers (the visible title is the summary line)
+    shiny::h2(id = "code_title", class = "sr-only", "R code"),
     # The summary holds only the summary line; the buttons sit outside it
     shiny::tags$details(
       class = "code-details",

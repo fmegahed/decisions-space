@@ -22,6 +22,13 @@ jobs:
           r-version: "4.6.1"
           use-public-rspm: true
 
+      # Chrome for the accessibility test (shinytest2 and axe-core)
+      - uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        id: chrome
+
+      - name: Tell chromote where Chrome is
+        run: echo "CHROMOTE_CHROME=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+
       - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
         with:
           packages: |
@@ -42,6 +49,7 @@ jobs:
             any::zip
             any::testthat
             any::shinytest2
+            any::chromote
             any::withr
 
       # The tests use a mock in place of Jev, so no API key is needed
