@@ -1,29 +1,6 @@
 # The page: the ids that the server uses, the help text, and the rules for
-# accessibility, privacy and labels
-
-# The page as one HTML string (head and body)
-page_html <- function(ui = app_ui(NULL)) {
-  rendered <- htmltools::renderTags(ui)
-  paste(rendered$head, rendered$html)
-}
-
-# The tags of the page that match a CSS selector
-find_tags <- function(ui, selector) {
-  htmltools::tagQuery(ui)$find(selector)$selectedTags()
-}
-
-# The text of a tag and of its children, with no markup
-tag_text <- function(tag) {
-  stringr::str_squish(stringr::str_remove_all(as.character(tag), "<[^>]+>"))
-}
-
-# Replace a value of the app code (sourced into the global environment) for
-# one test, and put it back at the end of the test
-local_global <- function(name, value, env = parent.frame()) {
-  old <- get(name, envir = globalenv())
-  assign(name, value, envir = globalenv())
-  withr::defer(assign(name, old, envir = globalenv()), envir = env)
-}
+# accessibility, privacy and labels. The helpers are in helper-ui.R; the
+# output builders of R/render.R have their tests in test-render.R.
 
 HELP_KEYS_BRIEF <- c(
   "intro", "data", "question", "references", "references_score", "answers",
@@ -96,6 +73,21 @@ test_that("the R code card is a closed details element with no control in its su
   }
 })
 
+test_that("Copy does not report success while the code is empty", {
+  # The code output sits in the closed R code card, and Shiny renders a hidden
+  # output only when it shows. Copy must not say "Copied" for an empty text.
+  js <- readr::read_file(file.path(APP_ROOT, "www", "app.js"))
+  copy <- stringr::str_extract(js, "function copyCode\\(button\\) \\{[\\s\\S]*?\\n  \\}\\n")
+  expect_false(is.na(copy))
+  guard <- stringr::str_locate(copy, stringr::fixed("if (!text)"))[1, "start"]
+  write <- stringr::str_locate(copy, stringr::fixed("writeCopy("))[1, "start"]
+  expect_false(is.na(guard))
+  expect_lt(guard, write)
+  # The guard opens the card, and the copy waits for the code
+  expect_match(copy, "details.open = true", fixed = TRUE)
+  expect_match(js, "Nothing to copy yet.", fixed = TRUE)
+})
+
 test_that("the page loads no font from Google", {
   www <- file.path(APP_ROOT, "www")
   text <- c(
@@ -124,26 +116,11 @@ test_that("the page loads its scripts and styles only from the app", {
   expect_false(any(stringr::str_detect(sources, "^(https?:)?//")))
 })
 
-test_that("every image has an alt attribute", {
-  textiles <- sample_spec("textiles")
-  table <- answers_table(textiles, sample_answers("textiles"), "defective") |>
-    utils::head(3)
+test_that("every image of the page has an alt attribute", {
   page_imgs <- find_tags(app_ui(NULL), "img")
-  gallery_imgs <- find_tags(
-    shiny::tagList(gallery_ui(table, "defective", src = c("a.jpg", "b.jpg", "c.jpg"))), "img"
-  )
-  ref_imgs <- find_tags(shiny::tagList(reference_rows(
-    textiles$question, list(nominal = c("n1.jpg", "n2.jpg"), defective = "d1.jpg")
-  )), "img")
   expect_gte(length(page_imgs), 1)
-  expect_length(gallery_imgs, 3)
-  expect_length(ref_imgs, 3)
-  alts <- purrr::map(c(page_imgs, gallery_imgs, ref_imgs), \(t) htmltools::tagGetAttribute(t, "alt"))
+  alts <- purrr::map(page_imgs, \(t) htmltools::tagGetAttribute(t, "alt"))
   expect_false(any(purrr::map_lgl(alts, is.null)))
-  # The images of the answers name the file, the answer and the probability
-  expect_identical(
-    htmltools::tagGetAttribute(gallery_imgs[[1]], "alt"), alt_text(table[1, ], "defective")
-  )
 })
 
 test_that("the page has the input and output ids of the server", {
@@ -184,10 +161,10 @@ test_that("the Help switch is a checkbox with the role switch and the label Help
 })
 
 test_that("the file name box of each file input has a name and no tab stop", {
-  ui <- shiny::tagList(app_ui(NULL), reference_rows(sample_question("textiles")))
-  boxes <- find_tags(ui, "input.form-control") |>
+  # import_file, upload_images and upload_csv
+  boxes <- find_tags(app_ui(NULL), "input.form-control") |>
     purrr::keep(\(t) !is.null(htmltools::tagGetAttribute(t, "readonly")))
-  expect_gte(length(boxes), 5)
+  expect_length(boxes, 3)
   for (box in boxes) {
     expect_identical(htmltools::tagGetAttribute(box, "aria-label"), "Chosen file")
     expect_identical(htmltools::tagGetAttribute(box, "tabindex"), "-1")
@@ -208,37 +185,6 @@ test_that("the footer has the versions, the model and the authors", {
   expect_match(html, sprintf("@ %s", substr(DECISIONS_SHA, 1, 7)), fixed = TRUE)
   expect_match(html, MODEL, fixed = TRUE)
   expect_match(html, "Ying-Ju (Tessa) Chen (University of Dayton)", fixed = TRUE)
-})
-
-test_that("answer_rows gives the inputs of each answer", {
-  choice <- sample_question("textiles")
-  html <- as.character(answer_rows(choice))
-  for (id in c("answer_name_1", "answer_desc_1", "answer_name_2", "answer_desc_2", "answer_add")) {
-    expect_match(html, sprintf('id="%s"', id), fixed = TRUE)
-  }
-  # Two answers is the minimum of a choice question: no remove button
-  expect_no_match(html, "answer_remove_", fixed = TRUE)
-  three <- list(type = "choice", instructions = "x", answers = c(a = "", b = "", c = ""))
-  html <- as.character(answer_rows(three))
-  for (i in 1:3) expect_match(html, sprintf('id="answer_remove_%d"', i), fixed = TRUE)
-  # Six answers is the maximum: no add button
-  six <- list(type = "choice", instructions = "x", answers = stats::setNames(rep("", 6), letters[1:6]))
-  expect_no_match(as.character(answer_rows(six)), 'id="answer_add"', fixed = TRUE)
-  # Yes / no has fixed names: descriptions only, no buttons
-  noul <- list(type = "noul", instructions = "x", answers = c(true = "", false = ""))
-  html <- as.character(answer_rows(noul))
-  expect_no_match(html, "answer_name_", fixed = TRUE)
-  expect_match(html, 'id="answer_desc_2"', fixed = TRUE)
-  expect_no_match(html, "answer_(add|remove)")
-})
-
-test_that("reference_rows gives one file input ref_<answer> for each answer", {
-  html <- as.character(reference_rows(sample_question("textiles")))
-  expect_match(html, 'id="ref_nominal"', fixed = TRUE)
-  expect_match(html, 'id="ref_defective"', fixed = TRUE)
-  expect_identical(ref_input_id(c("crushing injury", "burn")), c("ref_crushing_injury", "ref_burn"))
-  score <- list(type = "score", instructions = "x", answers = c(low = "", high = ""))
-  expect_length(reference_rows(score), 0)
 })
 
 test_that("help_text gives text for each key", {
@@ -273,24 +219,4 @@ test_that("the help text has no contraction and no claim to be the first", {
   text <- paste(purrr::map_chr(HELP_KEYS_BRIEF, help_text), collapse = " ")
   expect_no_match(text, "n't|'re|'ll|'ve|'m\\b")
   expect_no_match(text, "\\bfirst\\s+(\\w+\\s+)?(model|tool|method|package|app)", ignore.case = TRUE)
-})
-
-test_that("the output helpers give the parts of the mockup", {
-  meter <- as.character(spend_meter_ui(0.02))
-  expect_match(meter, "$0.02 of $0.25", fixed = TRUE)
-  stats <- list(n = 46, cost = 0.016, accuracy = 0.8, auc = 0.75)
-  html <- as.character(stats_ui(stats, "image", note = "Saved run"))
-  for (text in c("0.75", "AUC", "0.80", "accuracy", "46", "images", "$0.016", "Saved run")) {
-    expect_match(html, text, fixed = TRUE)
-  }
-  text_stats <- list(n = 75, cost = 0, accuracy = NA_real_, auc = NA_real_)
-  html <- as.character(stats_ui(text_stats, "text"))
-  expect_no_match(html, "AUC|accuracy")
-  expect_match(html, "texts", fixed = TRUE)
-  files <- as.character(bundle_files_ui(
-    c("textiles.R", "textiles-setup.json", "textiles-answers.csv", "README.md"),
-    "textiles-2026-11-03.zip"
-  ))
-  expect_match(files, "textiles-2026-11-03.zip", fixed = TRUE)
-  expect_match(files, "read_setup()", fixed = TRUE)
 })

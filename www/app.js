@@ -141,28 +141,60 @@
   }
 
   // ---- Copy button of the R code -------------------------------------------
+  // The code output sits in the R code card, which is closed when the page
+  // opens. Shiny renders a hidden output only when it shows, so the code can
+  // be empty. Then Copy opens the card and copies when the code arrives (see
+  // the shiny:value handler below), or says that there is nothing to copy
+  // yet. Copy never says "Copied" for an empty text.
+
+  var pendingCopy = null;
+  var pendingTimer = null;
+
+  // Show a message on the button and in the live region for 2 seconds
+  function sayCopy(button, message) {
+    var label = button.querySelector('.copy-label');
+    var status = byId('copy_status');
+    if (label) label.textContent = message;
+    if (status) status.textContent = message;
+    window.setTimeout(function() {
+      if (label) label.textContent = 'Copy';
+      if (status) status.textContent = '';
+    }, 2000);
+  }
+
+  function writeCopy(button, text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function() { sayCopy(button, 'Copied'); },
+        function() { sayCopy(button, 'Copy failed. Select the code and copy it.'); }
+      );
+    } else {
+      sayCopy(button, 'Copy is not available. Select the code and copy it.');
+    }
+  }
 
   function copyCode(button) {
     var target = byId(button.getAttribute('data-target'));
-    var label = button.querySelector('.copy-label');
-    var status = byId('copy_status');
-    if (!target || !label) return;
-    function done(message) {
-      label.textContent = message;
-      if (status) status.textContent = message;
-      window.setTimeout(function() {
-        label.textContent = 'Copy';
-        if (status) status.textContent = '';
-      }, 2000);
+    if (!target) return;
+    var text = target.textContent;
+    if (!text) {
+      var details = target.closest('details');
+      if (details && !details.open) {
+        // Open the card; the copy waits for the code, at most 5 seconds
+        pendingCopy = button;
+        details.open = true;
+        window.clearTimeout(pendingTimer);
+        pendingTimer = window.setTimeout(function() {
+          if (pendingCopy !== button) return;
+          pendingCopy = null;
+          sayCopy(button, 'Nothing to copy yet.');
+        }, 5000);
+      } else {
+        sayCopy(button, 'Nothing to copy yet.');
+      }
+      return;
     }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(target.textContent).then(
-        function() { done('Copied'); },
-        function() { done('Copy failed. Select the code and copy it.'); }
-      );
-    } else {
-      done('Copy is not available. Select the code and copy it.');
-    }
+    writeCopy(button, text);
   }
 
   document.addEventListener('click', function(event) {
@@ -200,6 +232,14 @@
       if (event.name !== 'code' || typeof event.value !== 'string') return;
       event.preventDefault();
       byId('code').innerHTML = highlightR(event.value);
+      // A Copy that waited for the code runs now
+      if (pendingCopy) {
+        var button = pendingCopy;
+        pendingCopy = null;
+        window.clearTimeout(pendingTimer);
+        if (event.value) writeCopy(button, event.value);
+        else sayCopy(button, 'Nothing to copy yet.');
+      }
     });
   }
 
