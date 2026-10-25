@@ -2,13 +2,34 @@
 # several states, plus the reflow check at 320 CSS pixels (WCAG 1.4.10, which
 # axe does not test). The app runs with SPACE_MOCK=1, so no call is paid.
 
-skip_if_not(nzchar(chromote::find_chrome() %||% ""), "Chrome is not installed")
+# The path of Chrome, or "" when it is not there (also for a path that does not exist)
+chrome_path <- function() {
+  path <- tryCatch(chromote::find_chrome(), error = \(e) NULL)
+  if (is.null(path) || !nzchar(path) || !file.exists(path)) "" else path
+}
+
+# No Chrome: skip on a local run, fail on CI, so that a broken Chrome path
+# on CI cannot give a green run without the accessibility check
+require_chrome <- function(path = chrome_path(), ci = identical(Sys.getenv("CI"), "true")) {
+  if (nzchar(path)) return(invisible(path))
+  if (ci) stop("Chrome is not found on CI; the accessibility check did not run", call. = FALSE)
+  skip("Chrome is not installed")
+}
+
+test_that("a missing Chrome fails on CI and skips on a local run", {
+  expect_error(require_chrome("", ci = TRUE), "Chrome is not found on CI")
+  expect_identical(tryCatch(require_chrome("", ci = FALSE), skip = function(s) "skipped"), "skipped")
+  withr::local_envvar(CHROMOTE_CHROME = file.path(tempdir(), "no-such-chrome"), CI = "true")
+  expect_identical(chrome_path(), "")
+  expect_error(require_chrome(), "Chrome is not found on CI")
+})
 
 AXE_FILE <- file.path(APP_ROOT, "tests", "a11y", "axe.min.js")
 AXE_TAGS <- c("wcag2a", "wcag2aa", "wcag21aa", "wcag22aa")
 
 # The app in a browser window of the given size
 open_app <- function(width = 1280, height = 900, env = parent.frame()) {
+  require_chrome()
   # NOT_CRAN: shinytest2 skips its driver on CRAN unless this is set
   withr::local_envvar(SPACE_MOCK = "1", NOT_CRAN = "true", .local_envir = env)
   app <- shinytest2::AppDriver$new(APP_ROOT, variant = NULL, width = width, height = height, load_timeout = 60000)
@@ -37,7 +58,8 @@ show_textiles_answers <- function(app) {
   app$click("sample_textiles")
   app$run_js("document.getElementById('samples_menu').open = false")
   app$click("try5")
-  app$wait_for_js("document.querySelectorAll('.answers-card .bd img, .answers-card .bd .tile').length > 0 || document.querySelector('#gallery') && document.querySelector('#gallery').children.length > 0", timeout = 60000)
+  # The run has ended and all 5 tiles are drawn
+  app$wait_for_js("!document.body.classList.contains('is-running') && document.querySelectorAll('#gallery .tile').length === 5", timeout = 60000)
   app$wait_for_idle()
 }
 
@@ -72,13 +94,14 @@ test_that("axe finds no violation on the injuries sample in Table view", {
   app$run_js("document.getElementById('samples_menu').open = false")
   app$click("try5")
   app$set_inputs(view = "table")
-  app$wait_for_js("document.querySelectorAll('#table table tr').length > 1", timeout = 60000)
+  app$wait_for_js("!document.body.classList.contains('is-running') && document.querySelectorAll('#table table tbody tr').length === 5", timeout = 60000)
   expect_no_violations(app)
 })
 
 test_that("the page does not scroll sideways at 320 CSS pixels", {
   app <- open_app(width = 320, height = 800)
   show_textiles_answers(app)
+  expect_equal(app$get_js("window.innerWidth"), 320)
   expect_true(app$get_js("document.documentElement.scrollWidth <= window.innerWidth"))
   expect_no_violations(app)
 })
