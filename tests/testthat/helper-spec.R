@@ -8,12 +8,24 @@ tiny_jpg <- function(path) {
   invisible(path)
 }
 
-# The question of the upload tests: quotes and backticks must stay valid R
+# The question of the upload tests: a quote, a backtick, a backslash and a new
+# line must stay valid R
 upload_question <- function() {
   list(
     type = "choice",
-    instructions = "Is the part \"ok\"? Look at `inspection_image`.",
+    instructions = "Is the part \"ok\"? Look at `inspection_image`, folder C:\\data.\nSecond line.",
     answers = c(nominal = "The part is fine.", defective = "The part is broken.")
+  )
+}
+
+# Fail the test when anything unserializes or calls decisions::read_setup()
+# (the guard of the threat model: import must not run code of a file)
+local_no_unserialize <- function(env = parent.frame()) {
+  trace("unserialize", quote(stop("unserialize was called")), where = baseenv(), print = FALSE)
+  withr::defer(untrace("unserialize", where = baseenv()), envir = env)
+  testthat::local_mocked_bindings(
+    read_setup = function(...) stop("read_setup was called"),
+    .package = "decisions", .env = env
   )
 }
 

@@ -9,12 +9,12 @@ r_string <- function(x) encodeString(x, quote = '"')
 # A name for the left side of `name = value`: bare when R allows it, else quoted
 r_name <- function(x) ifelse(make.names(x) == x, x, r_string(x))
 
-# Folder names for the answers: a name with `/`, `\` or `:` or a leading dot
-# is cleaned, and the clean names stay unique. The names of the result are the
-# answers.
+# Folder names for the answers: a name with one of `/ \ : * ? " < > |`, a
+# control character or a leading dot is cleaned, and the clean names stay
+# unique. The names of the result are the answers.
 answer_folders <- function(answers) {
   folder <- answers |>
-    stringr::str_replace_all("[/\\\\:]", "_") |>
+    stringr::str_replace_all('[/\\\\:*?"<>|[:cntrl:]]', "_") |>
     stringr::str_remove("^\\.+") |>
     stringr::str_squish()
   folder[folder == ""] <- "answer"

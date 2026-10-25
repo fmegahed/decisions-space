@@ -145,18 +145,14 @@ test_that("a file with a calibrator is refused, and nothing is unserialized", {
     json$calibrator <- "abcd"
     json
   })
-  trace("unserialize", quote(stop("unserialize was called")), where = baseenv(), print = FALSE)
-  withr::defer(untrace("unserialize", where = baseenv()))
-  testthat::local_mocked_bindings(
-    read_setup = function(...) stop("read_setup was called"),
-    .package = "decisions"
-  )
+  local_no_unserialize()
   imp <- read_import(path)
   expect_identical(imp$problems, NOT_OURS_TEXT)
   expect_null(imp$question)
 })
 
 test_that("the six-question setup of decisions is refused", {
+  local_no_unserialize()
   path <- system.file("extdata", "rubric_setup.json", package = "decisions")
   imp <- read_import(path)
   expect_identical(imp$problems, NOT_OURS_TEXT)
@@ -164,6 +160,7 @@ test_that("the six-question setup of decisions is refused", {
 })
 
 test_that("a file that is not a setup is refused", {
+  local_no_unserialize()
   path <- withr::local_tempfile(fileext = ".json")
   writeLines("not json {", path)
   expect_identical(read_import(path)$problems, NOT_OURS_TEXT)
@@ -171,6 +168,7 @@ test_that("a file that is not a setup is refused", {
 })
 
 test_that("other image settings are refused", {
+  local_no_unserialize()
   path <- edit_setup(upload_spec(labelled = TRUE), \(json) {
     json$image_settings$max_size <- 512
     json
@@ -179,6 +177,7 @@ test_that("other image settings are refused", {
 })
 
 test_that("another model gives the problem and keeps the question", {
+  local_no_unserialize()
   spec <- upload_spec(labelled = TRUE)
   path <- edit_setup(spec, \(json) {
     json$decider$model <- "jev-1.0.0"
@@ -190,9 +189,126 @@ test_that("another model gives the problem and keeps the question", {
 })
 
 test_that("a reference that is not a JPEG is refused", {
+  local_no_unserialize()
   path <- edit_setup(upload_spec(labelled = TRUE), \(json) {
     json$references$nominal[[1]] <- jsonlite::base64_enc(charToRaw("not an image"))
     json
   })
   expect_identical(read_import(path)$problems, NOT_OURS_TEXT)
+})
+
+# A setup file of the bundle with a change, for the refusal tests
+refused_after <- function(change) {
+  path <- edit_setup(upload_spec(labelled = FALSE), change, env = parent.frame())
+  read_import(path)
+}
+
+test_that("a file with only calibrator_hash set is refused", {
+  local_no_unserialize()
+  imp <- refused_after(\(json) {
+    json$calibrator_hash <- "abcd"
+    json
+  })
+  expect_identical(imp$problems, NOT_OURS_TEXT)
+  expect_null(imp$question)
+})
+
+test_that("unnamed references are refused", {
+  local_no_unserialize()
+  imp <- refused_after(\(json) {
+    json$references <- unname(json$references)
+    json
+  })
+  expect_identical(imp$problems, NOT_OURS_TEXT)
+  expect_null(imp$references)
+})
+
+test_that("references for an answer that does not exist are refused", {
+  local_no_unserialize()
+  imp <- refused_after(\(json) {
+    names(json$references) <- c("nominal", "other")
+    json
+  })
+  expect_identical(imp$problems, NOT_OURS_TEXT)
+})
+
+test_that("a reference over the file limit is refused", {
+  local_no_unserialize()
+  big <- c(as.raw(c(0xff, 0xd8, 0xff)), raw(mb_bytes(MAX_FILE_MB) + 1))
+  imp <- refused_after(\(json) {
+    json$references$nominal[[1]] <- jsonlite::base64_enc(big)
+    json
+  })
+  expect_identical(imp$problems, NOT_OURS_TEXT)
+})
+
+test_that("more references than the limit for one answer are refused", {
+  local_no_unserialize()
+  imp <- refused_after(\(json) {
+    json$references$nominal <- rep(json$references$nominal, MAX_REFERENCES + 1)
+    json
+  })
+  expect_identical(imp$problems, NOT_OURS_TEXT)
+  expect_null(imp$question)
+})
+
+test_that("a score question with references is refused", {
+  local_no_unserialize()
+  imp <- refused_after(\(json) {
+    json$questions[[1]]$type <- "score"
+    json
+  })
+  expect_identical(imp$problems, NOT_OURS_TEXT)
+  expect_null(imp$question)
+})
+
+test_that("an entry with ../ in a zip file is skipped and nothing is written outside", {
+  local_no_unserialize()
+  dir <- unzip_bundle(bundle_of(upload_spec(labelled = FALSE)))
+  # Name the entry "xx/evil-setup.json", then turn "xx/" into "../" in the bytes
+  file.copy(file.path(dir, "my_parts-setup.json"), file.path(dir, "evil-setup.json"))
+  dir.create(file.path(dir, "xx"))
+  file.rename(file.path(dir, "evil-setup.json"), file.path(dir, "xx", "evil-setup.json"))
+  zf <- file.path(withr::local_tempdir(), "evil.zip")
+  zip::zip(zf, files = "xx/evil-setup.json", root = dir, mode = "mirror")
+  bytes <- readBin(zf, "raw", file.size(zf))
+  from <- charToRaw("xx/evil")
+  at <- which(purrr::map_lgl(seq_along(bytes), \(i) identical(bytes[i + seq_along(from) - 1], from)))
+  expect_length(at, 2)
+  for (i in at) bytes[i:(i + 2)] <- charToRaw("../")
+  writeBin(bytes, zf)
+  expect_identical(read_import(zf)$problems, NOT_OURS_TEXT)
+  expect_false(file.exists(file.path(tempdir(), "evil-setup.json")))
+  # a valid setup next to the unsafe entry still imports
+  zip::zip_append(zf, files = "my_parts-setup.json", root = dir, mode = "mirror")
+  expect_identical(read_import(zf)$problems, character())
+  expect_false(file.exists(file.path(tempdir(), "evil-setup.json")))
+})
+
+test_that("an answer name with characters that Windows forbids imports and cleans the folder", {
+  local_no_unserialize()
+  odd <- "a*b?\"c<d>e|f"
+  expect_identical(unname(answer_folders(odd)), "a_b__c_d_e_f")
+  spec <- upload_spec(labelled = FALSE)
+  names(spec$question$answers) <- c("nominal", odd)
+  names(spec$references) <- c("nominal", odd)
+  table <- answers_table(spec, upload_answers(spec) |> dplyr::rename(".pred_a_b_c_d_e_f" = ".pred_defective"), "nominal")
+  zipfile <- file.path(withr::local_tempdir(), "run.zip")
+  write_bundle(spec, table, zipfile)
+  expect_true(any(stringr::str_detect(zip::zip_list(zipfile)$filename, "^references/a_b__c_d_e_f/")))
+  imp <- read_import(zipfile)
+  expect_identical(imp$problems, character())
+  expect_named(imp$references, c("nominal", odd))
+  expect_true(all(file.exists(unlist(imp$references))))
+  expect_true(all(stringr::str_detect(unlist(imp$references), "/references/(nominal|a_b__c_d_e_f)/ref_")))
+})
+
+test_that("read_import() never stops on a bad file", {
+  local_no_unserialize()
+  empty <- withr::local_tempfile(fileext = ".json")
+  file.create(empty)
+  for (path in c(empty, file.path(tempdir(), "nothing.zip"), tempdir())) {
+    expect_no_error(imp <- read_import(path))
+    expect_identical(imp$problems, NOT_OURS_TEXT)
+  }
 })

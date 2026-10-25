@@ -61,9 +61,9 @@ bundle_readme <- function(spec, refs, name, has_data, date) {
     "",
     "If you use this run, cite the package and the Space:",
     "",
-    "- Megahed, F. M., & Chen, Y.-J. (2026). *decisions: Typed decisions from decision models* (R package version 0.1.0). https://github.com/fmegahed/decisions",
+    sprintf("- Megahed, F. M., & Chen, Y.-J. (2026). *decisions: Typed decisions from decision models* (R package version %s). https://github.com/fmegahed/decisions", as.character(utils::packageVersion("decisions"))),
     sprintf(
-      "- Megahed, F. M. (2026). *decisions Space* (Version %s) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions",
+      "- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version %s) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions",
       APP_VERSION
     )
   ), collapse = "\n")
@@ -117,7 +117,7 @@ is_one_string <- function(x) is.character(x) && length(x) == 1 && !is.na(x)
 # The path of the setup file: the file itself, or the `*-setup.json` of a zip
 # file, unpacked below a temporary folder. NULL when there is none.
 import_setup_path <- function(path) {
-  if (!file.exists(path) || file.size(path) > mb_bytes(MAX_ZIP_MB)) return(NULL)
+  if (!utils::file_test("-f", path) || file.size(path) > mb_bytes(MAX_ZIP_MB)) return(NULL)
   if (tolower(tools::file_ext(path)) != "zip") return(path)
   entries <- tryCatch(zip::zip_list(path), error = function(e) NULL)
   if (is.null(entries)) return(NULL)
@@ -155,36 +155,37 @@ is_app_setup <- function(json) {
 import_references <- function(json, answers) {
   encoded <- json$references
   if (length(encoded) == 0) return(list(paths = NULL, problems = character()))
-  if (!is.list(encoded) || !all(names(encoded) %in% names(answers))) return(NULL)
+  # The references are an object keyed by answer: names that are all answers
+  keys <- names(encoded)
+  if (!is.list(encoded) || is.null(keys) || anyNA(keys) || anyDuplicated(keys) > 0 ||
+      !all(keys %in% names(answers))) {
+    return(NULL)
+  }
   folders <- answer_folders(names(answers))
   dir <- tempfile("import-references")
-  problems <- character()
-  paths <- purrr::imap(encoded, \(images, answer) {
-    if (length(images) > MAX_REFERENCES) {
-      problems <<- c(problems, sprintf(
-        "You can add at most %d references for each answer. The app used the first %d.",
-        MAX_REFERENCES, MAX_REFERENCES
-      ))
-      images <- images[seq_len(MAX_REFERENCES)]
-    }
-    purrr::imap_chr(unname(images), \(x, i) {
-      bytes <- if (is_one_string(x)) tryCatch(jsonlite::base64_dec(x), error = function(e) raw())
-      jpeg <- length(bytes) > 3 && all(bytes[1:3] == as.raw(c(0xff, 0xd8, 0xff)))
-      if (!jpeg || length(bytes) > mb_bytes(MAX_FILE_MB)) return(NA_character_)
-      path <- file.path(dir, "references", folders[[answer]], sprintf("ref_%s.jpg", i))
-      dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-      writeBin(bytes, path)
-      path
-    })
-  })
-  if (anyNA(unlist(paths))) return(NULL)
-  list(paths = paths, problems = problems)
+  paths <- tryCatch(
+    purrr::imap(encoded, \(images, answer) {
+      if (!is.list(images) || length(images) > MAX_REFERENCES) stop("bad references")
+      purrr::imap_chr(unname(images), \(x, i) {
+        bytes <- if (is_one_string(x)) jsonlite::base64_dec(x) else raw()
+        jpeg <- length(bytes) > 3 && all(bytes[1:3] == as.raw(c(0xff, 0xd8, 0xff)))
+        if (!jpeg || length(bytes) > mb_bytes(MAX_FILE_MB)) stop("bad reference")
+        path <- file.path(dir, "references", folders[[answer]], sprintf("ref_%s.jpg", i))
+        dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+        writeBin(bytes, path)
+        path
+      })
+    }),
+    error = function(e) NULL
+  )
+  if (is.null(paths)) return(NULL)
+  list(paths = paths, problems = character())
 }
 
 # Read a setup of this app: a bundle zip or the setup JSON. Returns the
 # question (in the format of spec.R), the references (answer to file paths) and
 # the problems. `question` is NULL when the file is refused.
-read_import <- function(path) {
+read_import_file <- function(path) {
   refuse <- function(problems = IMPORT_REFUSED) {
     list(question = NULL, references = NULL, problems = problems)
   }
@@ -209,5 +210,13 @@ read_import <- function(path) {
   list(
     question = question, references = references$paths,
     problems = c(problems, references$problems)
+  )
+}
+
+# Read an import file. It never stops: any error refuses the file.
+read_import <- function(path) {
+  tryCatch(
+    read_import_file(path),
+    error = function(e) list(question = NULL, references = NULL, problems = IMPORT_REFUSED)
   )
 }
