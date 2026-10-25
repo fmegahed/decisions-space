@@ -35,3 +35,11 @@ test_that("SAMPLE_FACTS holds the numbers of the saved runs", {
   expect_identical(SAMPLE_FACTS$textiles, c(auc = 0.75, accuracy = 0.80))
   expect_identical(SAMPLE_FACTS$injuries, c(accuracy = 0.96))
 })
+
+test_that("the help sentences hold the facts of the saved runs", {
+  tex <- paste(SAMPLE_FACTS_TEXT$textiles, collapse = " ")
+  for (fact in c("14 local flaws", "0.14 to 0.26", "0.75", "0.80")) {
+    expect_match(tex, fact, fixed = TRUE)
+  }
+  expect_match(paste(SAMPLE_FACTS_TEXT$injuries, collapse = " "), "0.96", fixed = TRUE)
+})

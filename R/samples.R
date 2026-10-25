@@ -8,8 +8,18 @@ SAMPLE_FACTS <- list(
   injuries = c(accuracy = 0.96)
 )
 SAMPLE_FACTS_TEXT <- list(
-  textiles = "The saved run of the textiles has an AUC of 0.75 and an accuracy of 0.80.",
-  injuries = "The saved run of the injury reports has an accuracy of 0.96."
+  textiles = c(
+    sprintf(
+      "The saved run has an AUC of %.2f and an accuracy of %.2f.",
+      SAMPLE_FACTS$textiles[["auc"]], SAMPLE_FACTS$textiles[["accuracy"]]
+    ),
+    "Jev puts all 14 local flaws (one broken spot) at the top.",
+    "The 9 global flaws, where the whole pattern is distorted, score like regular weaves (0.14 to 0.26).",
+    "A sharper description of \"defective\" or another reference can help there."
+  ),
+  injuries = sprintf(
+    "The saved run has an accuracy of %.2f.", SAMPLE_FACTS$injuries[["accuracy"]]
+  )
 )
 
 # The questions, copied from the vignettes images.Rmd and choosing-a-model.Rmd
@@ -85,6 +95,7 @@ sample_answers <- function(id) {
     "extdata", if (id == "textiles") "images.rds" else "choosing-a-model.rds",
     package = "decisions"
   ))
+  stopifnot(nrow(saved$answers$jev) == nrow(sample_spec(id)$inputs))
   saved$answers$jev |>
     dplyr::mutate(id = sample_spec(id)$inputs$id, .before = 1)
 }
