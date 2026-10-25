@@ -41,6 +41,7 @@ jobs:
         run: |
           hf upload fmegahed/decisions . . \
             --repo-type space \
+            --private \
             --exclude "tests/*" \
             --exclude ".github/*" \
             --exclude "status/*" \
