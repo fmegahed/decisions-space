@@ -115,8 +115,8 @@ IMPORT_REFUSED <- "This file was not made by this app."
 is_one_string <- function(x) is.character(x) && length(x) == 1 && !is.na(x)
 
 # The path of the setup file: the file itself, or the `*-setup.json` of a zip
-# file, unpacked below a temporary folder. NULL when there is none.
-import_setup_path <- function(path) {
+# file, unpacked below `dir`. NULL when there is none.
+import_setup_path <- function(path, dir = tempfile("import")) {
   if (!utils::file_test("-f", path) || file.size(path) > mb_bytes(MAX_ZIP_MB)) return(NULL)
   if (tolower(tools::file_ext(path)) != "zip") return(path)
   entries <- tryCatch(zip::zip_list(path), error = function(e) NULL)
@@ -127,7 +127,7 @@ import_setup_path <- function(path) {
       !purrr::map_lgl(filename, is_junk), uncompressed_size <= mb_bytes(MAX_ZIP_MB)
     )
   if (nrow(found) == 0) return(NULL)
-  dest <- tempfile("import")
+  dest <- file.path(dir, "setup")
   zip::unzip(path, files = found$filename[1], exdir = dest)
   file.path(dest, found$filename[1])
 }
@@ -150,9 +150,9 @@ is_app_setup <- function(json) {
     identical(settings$crop, IMAGE_SETTINGS$crop)
 }
 
-# Decode the references of the file below a temporary folder, as
+# Decode the references of the file below `dir`, as
 # references/<answer>/ref_<i>.jpg. NULL when there is a bad reference.
-import_references <- function(json, answers) {
+import_references <- function(json, answers, dir = tempfile("import")) {
   encoded <- json$references
   if (length(encoded) == 0) return(list(paths = NULL, problems = character()))
   # The references are an object keyed by answer: names that are all answers
@@ -162,7 +162,6 @@ import_references <- function(json, answers) {
     return(NULL)
   }
   folders <- answer_folders(names(answers))
-  dir <- tempfile("import-references")
   paths <- tryCatch(
     purrr::imap(encoded, \(images, answer) {
       if (!is.list(images) || length(images) > MAX_REFERENCES) stop("bad references")
@@ -184,12 +183,13 @@ import_references <- function(json, answers) {
 
 # Read a setup of this app: a bundle zip or the setup JSON. Returns the
 # question (in the format of spec.R), the references (answer to file paths) and
-# the problems. `question` is NULL when the file is refused.
-read_import_file <- function(path) {
+# the problems. `question` is NULL when the file is refused. Every file of the
+# import is written below `dir` (the server gives the folder of the session).
+read_import_file <- function(path, dir = tempfile("import")) {
   refuse <- function(problems = IMPORT_REFUSED) {
     list(question = NULL, references = NULL, problems = problems)
   }
-  setup_path <- import_setup_path(path)
+  setup_path <- import_setup_path(path, dir)
   if (is.null(setup_path)) return(refuse())
   json <- tryCatch(jsonlite::read_json(setup_path), error = function(e) NULL)
   if (is.null(json) || !isTRUE(tryCatch(is_app_setup(json), error = function(e) FALSE))) {
@@ -201,7 +201,7 @@ read_import_file <- function(path) {
   question <- list(type = raw$type, instructions = raw$instructions, answers = answers)
   problems <- check_question(question)
   if (length(problems) > 0) return(refuse(problems))
-  references <- import_references(json, answers)
+  references <- import_references(json, answers, dir)
   if (is.null(references) || (raw$type == "score" && length(references$paths) > 0)) return(refuse())
   model <- json$decider$model
   if (model != MODEL) {
@@ -214,9 +214,9 @@ read_import_file <- function(path) {
 }
 
 # Read an import file. It never stops: any error refuses the file.
-read_import <- function(path) {
+read_import <- function(path, dir = tempfile("import")) {
   tryCatch(
-    read_import_file(path),
+    read_import_file(path, dir),
     error = function(e) list(question = NULL, references = NULL, problems = IMPORT_REFUSED)
   )
 }
