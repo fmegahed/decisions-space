@@ -1,6 +1,6 @@
 # App logic lives in R/ and is sourced here in a fixed order
 # (R/_disable_autoload.R stops Shiny from sourcing the directory a second time)
-for (r_file in c("config.R", "spec.R", "samples.R", "data.R", "runs.R")) {
+for (r_file in c("config.R", "spec.R", "samples.R", "data.R", "runs.R", "spending.R")) {
   source(file.path("R", r_file), local = TRUE)
 }
 
