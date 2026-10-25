@@ -10,6 +10,34 @@ server_for <- function(deps) {
   server
 }
 
+# testServer() of app_server() with `deps`. The log line of each chunk is a
+# message; only the test of the log reads it, so the other tests silence it.
+test_server <- function(deps, expr) {
+  suppressMessages(shiny::testServer(server_for(deps), {{ expr }}))
+}
+
+# A zip file of n tiny images p01.jpg, p02.jpg, ... (no folders, so unlabelled)
+image_zip <- function(n, name, env = parent.frame()) {
+  root <- withr::local_tempdir(.local_envir = env)
+  files <- sprintf("p%02d.jpg", seq_len(n))
+  for (f in files) tiny_jpg(file.path(root, f))
+  zf <- file.path(withr::local_tempdir(.local_envir = env), name)
+  zip::zip(zf, files = files, root = root, mode = "mirror")
+  zf
+}
+
+# The mock of decide() that, like decide(), aborts when a file is missing.
+# `environment(f)$calls` counts the calls.
+strict_decide <- function(lookup = NULL) {
+  inner <- mock_decide(lookup)
+  calls <- 0L
+  function(decider, questions, image = NULL, references = NULL, ...) {
+    calls <<- calls + 1L
+    if (!all(file.exists(c(image, unlist(references))))) cli::cli_abort("Image file not found.")
+    inner(decider, questions, image = image, references = references, ...)
+  }
+}
+
 # One check of the status file, five days before the clock of the tests
 server_status <- function() {
   tibble::tibble(
@@ -43,6 +71,33 @@ table_rows <- function(html) {
   stringr::str_count(html, "<tr>") - 1L
 }
 
+# One mirai daemon with the app code for this test; the test skips when mirai
+# cannot start a daemon
+local_daemon <- function(env = parent.frame()) {
+  started <- tryCatch(
+    {
+      mirai::daemons(1)
+      mirai::everywhere(
+        for (f in files) source(f),
+        .args = list(files = file.path(APP_ROOT, "R", APP_FILES))
+      )
+      TRUE
+    },
+    error = \(e) FALSE
+  )
+  withr::defer(mirai::daemons(0), envir = env)
+  testthat::skip_if_not(started, "mirai cannot start a daemon")
+}
+
+# Wait until a run in a daemon ends (at most 60 seconds)
+wait_run <- function(session, running) {
+  deadline <- Sys.time() + 60
+  while (shiny::isolate(running()) && Sys.time() < deadline) {
+    later::run_now(0.1)
+    session$flushReact()
+  }
+}
+
 # A data frame as shiny::fileInput() gives it
 as_upload <- function(paths, names = basename(paths)) {
   data.frame(name = names, size = file.size(paths), type = "", datapath = paths)
@@ -50,7 +105,7 @@ as_upload <- function(paths, names = basename(paths)) {
 
 test_that("a sample shows its saved answers and makes no call", {
   mock <- mock_decide(sample_lookup("textiles"))
-  shiny::testServer(server_for(test_deps(mock)), {
+  test_server(test_deps(mock), {
     # The page opens with the textile sample
     expect_identical(nrow(table()), 46L)
     session$setInputs(sample_injuries = 1)
@@ -86,7 +141,7 @@ test_that("a sample shows its saved answers and makes no call", {
 test_that("an observer never sends its own input back to the page", {
   # The page answers each update with its value. If the server sent the input
   # that it reacts to, two crossing updates would flip the input forever.
-  shiny::testServer(server_for(test_deps()), {
+  test_server(test_deps(), {
     sent <- new.env()
     session$sendInputMessage <- function(inputId, message) sent$ids <- c(sent$ids, inputId)
     session$setInputs(mode = "text")
@@ -118,7 +173,8 @@ test_that("the end of the session deletes the uploads and the imports", {
     spec, answers_table(spec, upload_answers(spec), "defective"),
     file.path(src, "imp", "0.zip")
   )
-  shiny::testServer(server_for(test_deps()), {
+  prefixes <- new.env()
+  test_server(test_deps(), {
     session$setInputs(mode = "image", source = "upload")
     session$setInputs(upload_images = as_upload(jpgs))
     expect_identical(spec()$inputs$file, c("a.jpg", "b.jpg"))
@@ -127,14 +183,86 @@ test_that("the end of the session deletes the uploads and the imports", {
     kept <- c(spec()$inputs$path, unlist(spec()$references))
     expect_true(all(file.exists(kept)))
     expect_true(all(startsWith(normalizePath(kept), normalizePath(dir))))
+    expect_true(prefix %in% names(shiny::resourcePaths()))
+    prefixes$one <- prefix
     session$close()
     expect_false(dir.exists(dir))
     expect_false(any(file.exists(c(jpgs, zipfile))))
+    expect_false(prefix %in% names(shiny::resourcePaths()))
+  })
+  # Each session has its own prefix of 32 hexadecimal characters
+  test_server(test_deps(), prefixes$two <- prefix)
+  expect_match(prefixes$one, "^[0-9a-f]{32}$")
+  expect_false(identical(prefixes$one, prefixes$two))
+})
+
+test_that("the session folder stays until the chunk in flight ends", {
+  store <- usage_store_memory()
+  test_server(test_deps(mock_decide(sample_lookup("injuries")), store), {
+    session$setInputs(sample_injuries = 1)
+    session$setInputs(run_all = 1)
+    session$close()
+    expect_true(dir.exists(dir))
+    # The end of the chunk writes nothing (no error of the closed session)
+    noise <- utils::capture.output(for (i in seq_len(50)) later::run_now(), type = "message")
+    expect_identical(stringr::str_subset(noise, "chunk:", negate = TRUE), character())
+    expect_false(dir.exists(dir))
+    # The chunk of the closed session is still counted
+    expect_identical(store$read()$calls, 10L)
+  })
+})
+
+test_that("a failed chunk of a closed session writes nothing", {
+  failing <- list(read = \() empty_usage(), write = \(usage) stop("The store failed."))
+  test_server(test_deps(mock_decide(sample_lookup("injuries")), failing), {
+    session$setInputs(sample_injuries = 1)
+    session$setInputs(run_all = 1)
+    session$close()
+    noise <- utils::capture.output(for (i in seq_len(50)) later::run_now(), type = "message")
+    expect_identical(noise, character())
+    expect_false(dir.exists(dir))
+  })
+  # In an open session, the failed chunk ends the run with a short message
+  # (shiny warns about the failed task in the log)
+  test_server(test_deps(mock_decide(sample_lookup("injuries")), failing), {
+    session$setInputs(sample_injuries = 1)
+    session$setInputs(run_all = 1)
+    expect_warning(finish_run(session, running), "error occurred when invoking the ExtendedTask")
+    expect_identical(output$limits_text, "The run stopped. Try again.")
+  })
+})
+
+test_that("a missing file ends the run with a short message and no stop", {
+  store <- usage_store_memory()
+  mock <- strict_decide()
+  deps <- test_deps(mock, store)
+  many <- image_zip(12, "parts.zip")
+  few <- image_zip(3, "few.zip")
+  ref <- tiny_jpg(file.path(withr::local_tempdir(), "ref.jpg"))
+  test_server(deps, {
+    session$setInputs(source = "upload")
+    session$setInputs(upload_images = as_upload(many))
+    session$setInputs(ref_defective = as_upload(ref))
+    expect_length(spec()$references$defective, 1)
+    session$setInputs(run_all = 1)
+    unlink(spec()$inputs$path[11])
+    finish_run(session, running)
+    expect_identical(environment(mock)$calls, 1L)
+    expect_identical(output$limits_text, "The files of this run are not available. Upload them again.")
+    expect_identical(store$read()$calls, 10L)
+    expect_null(deps$state$stop_day)
+    # A missing reference stops a run before its first chunk
+    session$setInputs(upload_images = as_upload(few))
+    unlink(spec()$references$defective[1])
+    session$setInputs(try5 = 1)
+    finish_run(session, running)
+    expect_identical(environment(mock)$calls, 1L)
+    expect_identical(output$limits_text, "The files of this run are not available. Upload them again.")
   })
 })
 
 test_that("editing the instructions clears the answers", {
-  shiny::testServer(server_for(test_deps()), {
+  test_server(test_deps(), {
     session$setInputs(sample_textiles = 1)
     expect_identical(nrow(table()), 46L)
     session$setInputs(instructions = "Is the weave flawed?")
@@ -151,7 +279,7 @@ test_that("editing the instructions clears the answers", {
 
 test_that("a change of the setup during a run stops the run", {
   mock <- mock_decide(sample_lookup("injuries"))
-  shiny::testServer(server_for(test_deps(mock)), {
+  test_server(test_deps(mock), {
     session$setInputs(sample_injuries = 1)
     session$setInputs(run_all = 1)
     session$setInputs(instructions = "Which injury is it?")
@@ -164,7 +292,7 @@ test_that("a change of the setup during a run stops the run", {
 test_that("Run all on the injuries sample calls Jev in chunks of 10", {
   mock <- mock_decide(sample_lookup("injuries"))
   store <- usage_store_memory()
-  shiny::testServer(server_for(test_deps(mock, store)), {
+  test_server(test_deps(mock, store), {
     session$setInputs(sample_injuries = 1)
     session$setInputs(run_all = 1)
     finish_run(session, running)
@@ -184,7 +312,7 @@ test_that("Run all on the injuries sample calls Jev in chunks of 10", {
 test_that("a run over the limit of the day does not start", {
   mock <- mock_decide(sample_lookup("textiles"))
   store <- usage_store_memory()
-  shiny::testServer(server_for(test_deps(mock, store)), {
+  test_server(test_deps(mock, store), {
     session$setInputs(sample_textiles = 1)
     # Another session spends after this session started: the check reads the store again
     store$write(tibble::tibble(date = "2026-10-25", calls = 900L, input_tokens = 47e6, cost = 1.99))
@@ -199,7 +327,7 @@ test_that("a run over the limit of the day does not start", {
 test_that("a credit error stops the run and the runs of the day", {
   mock <- mock_decide(error = "HTTP 402 Payment Required: no credit left")
   deps <- test_deps(mock)
-  shiny::testServer(server_for(deps), {
+  test_server(deps, {
     session$setInputs(sample_injuries = 1)
     session$setInputs(run_all = 1)
     finish_run(session, running)
@@ -211,7 +339,7 @@ test_that("a credit error stops the run and the runs of the day", {
     expect_identical(output$limits_text, "The credit of this demo is used up. Try again later.")
   })
   # The stop holds for every visitor of the app until the UTC date changes
-  shiny::testServer(server_for(deps), {
+  test_server(deps, {
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 1L)
@@ -219,7 +347,7 @@ test_that("a credit error stops the run and the runs of the day", {
   })
   tomorrow <- deps
   tomorrow$now <- \() as.POSIXct("2026-10-26 00:00:05", tz = "UTC")
-  shiny::testServer(server_for(tomorrow), {
+  test_server(tomorrow, {
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(environment(mock)$calls, 2L)
@@ -229,7 +357,7 @@ test_that("a credit error stops the run and the runs of the day", {
 test_that("a missing key gives a short message and no spend", {
   mock <- mock_decide(abort = TRUE)
   store <- usage_store_memory()
-  shiny::testServer(server_for(test_deps(mock, store)), {
+  test_server(test_deps(mock, store), {
     session$setInputs(sample_injuries = 1)
     session$setInputs(run_all = 1)
     finish_run(session, running)
@@ -246,7 +374,7 @@ test_that("a missing key gives a short message and no spend", {
 
 test_that("Stop after the first chunk keeps its answers", {
   mock <- mock_decide(sample_lookup("injuries"))
-  shiny::testServer(server_for(test_deps(mock)), {
+  test_server(test_deps(mock), {
     session$setInputs(sample_injuries = 1)
     session$setInputs(run_all = 1)
     session$setInputs(stop = 1)
@@ -254,6 +382,121 @@ test_that("Stop after the first chunk keeps its answers", {
     expect_identical(environment(mock)$calls, 1L)
     expect_identical(nrow(table()), 10L)
     expect_identical(table_rows(output$table), 10L)
+  })
+})
+
+test_that("new input content hides the answers and empties the downloads", {
+  one <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("a,b", "x one,y one", "x two,y two"), one)
+  two <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("a,b", "z one,w one", "z two,w two"), two)
+  first <- image_zip(3, "parts.zip")
+  second <- image_zip(3, "parts.zip")
+  test_server(test_deps(mock_decide()), {
+    run_shows <- function(n) {
+      session$setInputs(run_all = 1)
+      finish_run(session, running)
+      expect_identical(nrow(table()), n)
+      expect_identical(nrow(download_table()), n)
+    }
+    hidden <- function() {
+      expect_null(table())
+      expect_identical(nrow(download_table()), 0L)
+    }
+    session$setInputs(mode = "text")
+    session$setInputs(source = "upload")
+    # A new paste
+    session$setInputs(paste_text = "One.\n\nTwo.")
+    run_shows(2L)
+    session$setInputs(paste_text = "Three.\n\nFour.")
+    hidden()
+    # Another text column of a CSV file
+    session$setInputs(upload_csv = as_upload(one, "reviews.csv"), csv_text_col = "a")
+    run_shows(2L)
+    session$setInputs(csv_text_col = "b")
+    hidden()
+    # Another CSV file with the same number of rows
+    run_shows(2L)
+    session$setInputs(upload_csv = as_upload(two, "reviews.csv"))
+    hidden()
+    # Another zip file with the same file names
+    session$setInputs(mode = "image")
+    session$setInputs(upload_images = as_upload(first))
+    run_shows(3L)
+    session$setInputs(upload_images = as_upload(second))
+    hidden()
+  })
+})
+
+test_that("a sample loaded during a run keeps its saved answers", {
+  mock <- mock_decide(sample_lookup("injuries"))
+  store <- usage_store_memory()
+  test_server(test_deps(mock, store), {
+    session$setInputs(sample_injuries = 1)
+    session$setInputs(run_all = 1)
+    session$setInputs(sample_injuries = 2)
+    finish_run(session, running)
+    expect_identical(nrow(table()), 75L)
+    expect_match(output$stats$html, "Saved run", fixed = TRUE)
+    # Nobody sees the answers of the run, so it stops; its chunk is still counted
+    expect_identical(environment(mock)$calls, 1L)
+    expect_identical(store$read()$calls, 10L)
+  })
+})
+
+test_that("Remove does nothing for a Yes / no question", {
+  test_server(test_deps(), {
+    session$setInputs(qtype = "noul")
+    expect_no_error(session$setInputs(answer_remove_1 = 1))
+    expect_identical(question()$answers, c(true = "", false = ""))
+  })
+})
+
+test_that("a chunk runs in a mirai daemon when async is TRUE", {
+  local_daemon()
+  mock <- mock_decide(sample_lookup("textiles"))
+  deps <- test_deps(mock)
+  deps$async <- TRUE
+  test_server(deps, {
+    session$setInputs(try5 = 1)
+    wait_run(session, running)
+    expect_false(running())
+    expect_identical(nrow(table()), 5L)
+    first <- sample_spec("textiles")$inputs$id[1:5]
+    saved <- sample_answers("textiles") |> dplyr::filter(id %in% first)
+    expect_setequal(table()$p_target, saved$.pred_defective)
+    expect_identical(deps$store$read()$calls, 5L)
+  })
+})
+
+test_that("a new upload during a run waits for the chunk and does not stop the day", {
+  local_daemon()
+  first <- image_zip(12, "parts.zip")
+  second <- image_zip(12, "parts.zip")
+  # In the daemon, the chunk waits, then reads its files as decide() does
+  strict <- strict_decide()
+  slow <- function(...) {
+    Sys.sleep(1.5)
+    strict(...)
+  }
+  deps <- test_deps(slow)
+  deps$async <- TRUE
+  test_server(deps, {
+    session$setInputs(source = "upload")
+    session$setInputs(upload_images = as_upload(first))
+    old <- image_upload()$dir
+    session$setInputs(run_all = 1)
+    session$setInputs(upload_images = as_upload(second))
+    expect_true(dir.exists(old))
+    wait_run(session, running)
+    expect_false(dir.exists(old))
+    expect_null(deps$state$stop_day)
+    # The chunk read all its files; its answers are kept, hidden for the new upload
+    expect_identical(nrow(results()$answers), 10L)
+    expect_true(all(is.na(results()$answers$.error)))
+    expect_null(table())
+    expect_identical(nrow(spec()$inputs), 12L)
+    expect_true(all(file.exists(spec()$inputs$path)))
   })
 })
 
@@ -285,7 +528,7 @@ test_that("the log has counts only: no input, no file name, no error text", {
 
 test_that("Try on 5 gives the mean tokens for the estimate of Run all", {
   mock <- mock_decide(sample_lookup("textiles"))
-  shiny::testServer(server_for(test_deps(mock)), {
+  test_server(test_deps(mock), {
     session$setInputs(sample_textiles = 1)
     expect_match(output$run_estimate, "\\$0\\.03$")
     session$setInputs(try5 = 1)
@@ -299,7 +542,7 @@ test_that("Try on 5 gives the mean tokens for the estimate of Run all", {
 })
 
 test_that("a run with no tokens keeps the guess for the estimate", {
-  shiny::testServer(server_for(test_deps(mock_decide())), {
+  test_server(test_deps(mock_decide()), {
     session$setInputs(try5 = 1)
     finish_run(session, running)
     expect_identical(nrow(table()), 5L)
@@ -312,7 +555,7 @@ test_that("the message line holds the latest notice, in full sentences", {
   writeLines("{}", bad)
   csv <- withr::local_tempfile(fileext = ".csv")
   writeLines(c("review,tag", "Fine,a", ",b"), csv)
-  shiny::testServer(server_for(test_deps()), {
+  test_server(test_deps(), {
     session$setInputs(import_file = as_upload(bad, "x.json"))
     expect_identical(output$limits_text, "This file was not made by this app.")
     session$setInputs(source = "upload")
@@ -327,7 +570,7 @@ test_that("the message line holds the latest notice, in full sentences", {
 test_that("a question that decisions refuses makes no call and no stop", {
   mock <- mock_decide(sample_lookup("textiles"))
   deps <- test_deps(mock)
-  shiny::testServer(server_for(deps), {
+  test_server(deps, {
     session$setInputs(sample_textiles = 1)
     session$setInputs(instructions = "")
     session$setInputs(try5 = 1)
@@ -343,7 +586,7 @@ test_that("a question that decisions refuses makes no call and no stop", {
 })
 
 test_that("the answers of the question follow the inputs of the page", {
-  shiny::testServer(server_for(test_deps()), {
+  test_server(test_deps(), {
     session$setInputs(sample_textiles = 1)
     session$setInputs(answer_name_2 = "flawed", answer_desc_1 = "Regular.")
     defective <- sample_question("textiles")$answers[["defective"]]
@@ -365,7 +608,7 @@ test_that("an upload of labelled images matches the folders to the answers", {
   zf <- file.path(withr::local_tempdir(), "parts.zip")
   zip::zip(zf, files = rel, root = root, mode = "mirror")
   mock <- mock_decide()
-  shiny::testServer(server_for(test_deps(mock)), {
+  test_server(test_deps(mock), {
     session$setInputs(mode = "image", source = "upload")
     session$setInputs(upload_images = as_upload(zf))
     expect_identical(spec()$name, "parts")
@@ -383,7 +626,7 @@ test_that("an upload of labelled images matches the folders to the answers", {
 test_that("texts come from the paste box or from a CSV file", {
   csv <- withr::local_tempfile(fileext = ".csv")
   writeLines(c("review,tag", "I want my money back,true", "Thanks a lot,false"), csv)
-  shiny::testServer(server_for(test_deps()), {
+  test_server(test_deps(), {
     session$setInputs(mode = "text")
     expect_identical(spec()$source, "injuries")
     session$setInputs(source = "upload")
@@ -415,13 +658,25 @@ test_that("the bundle files of the card are the files of the bundle", {
 
 test_that("SPACE_MOCK=1 uses the mock and a store in memory", {
   withr::local_envvar(SPACE_MOCK = "1")
-  withr::local_dir(APP_ROOT)
+  # The mock is found from the app folder, not from the working folder
+  withr::local_dir(withr::local_tempdir())
   deps <- app_deps()
   out <- run_chunk(sample_spec("textiles"), 1:3, deps$decide_fn)
   expect_equal(out$.pred_defective, sample_answers("textiles")$.pred_defective[1:3])
   out <- run_chunk(sample_spec("injuries"), 1:3, deps$decide_fn)
   expect_equal(out$.pred_amputation, sample_answers("injuries")$.pred_amputation[1:3])
   expect_identical(nrow(deps$store$read()), 0L)
-  withr::local_dir(withr::local_tempdir())
-  expect_error(app_deps(), "SPACE_MOCK")
+  expect_error(mock_deps(file.path(tempdir(), "none.R")), "SPACE_MOCK=1 needs")
+})
+
+test_that("SPACE_MOCK=1 replaces only the dependencies that the caller does not give", {
+  withr::local_envvar(SPACE_MOCK = "1")
+  local_global("APP_ROOT", withr::local_tempdir())
+  decide_fn <- mock_decide()
+  store <- usage_store_memory()
+  deps <- app_deps(decide_fn = decide_fn, store = store)
+  expect_identical(deps$decide_fn, decide_fn)
+  expect_identical(deps$store, store)
+  # A folder with no mock: a clear message when the mock is needed
+  expect_error(app_deps(store = store), "SPACE_MOCK=1 needs")
 })

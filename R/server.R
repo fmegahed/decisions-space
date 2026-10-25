@@ -12,7 +12,7 @@
 # replace the defaults.
 app_deps <- function(decide_fn = decisions::decide, store = usage_store_hf(),
                      status_fn = read_status, now = Sys.time, async = TRUE) {
-  if (Sys.getenv("SPACE_MOCK") == "1") {
+  if (Sys.getenv("SPACE_MOCK") == "1" && (missing(decide_fn) || missing(store))) {
     mock <- mock_deps()
     if (missing(decide_fn)) decide_fn <- mock$decide_fn
     if (missing(store)) store <- mock$store
@@ -24,8 +24,9 @@ app_deps <- function(decide_fn = decisions::decide, store = usage_store_hf(),
 }
 
 # The mock of the tests (with the saved answers of both samples) and a store in
-# memory. The mock stays in tests/: the app code holds no mock.
-mock_deps <- function(path = file.path("tests", "testthat", "helper-mock.R")) {
+# memory. The mock stays in tests/: the app code holds no mock. APP_ROOT is the
+# app folder (set by app.R, and by the helper of the tests).
+mock_deps <- function(path = file.path(APP_ROOT, "tests", "testthat", "helper-mock.R")) {
   if (!file.exists(path)) {
     stop(
       "SPACE_MOCK=1 needs ", path,
@@ -52,8 +53,12 @@ source_choices <- function(mode) {
   SOURCE_CHOICES[SOURCE_CHOICES %in% c(if (mode == "image") "textiles" else "injuries", "upload")]
 }
 
-# The answers belong to one setup and one set of inputs
-answers_key <- function(spec) rlang::hash(list(spec_fingerprint(spec), spec$inputs$id))
+# The answers belong to one setup and one set of inputs. The ids alone repeat
+# ("Text 1", "Row 1", "001_a.jpg"), so the key holds the paths and the texts too.
+answers_key <- function(spec) {
+  content <- spec$inputs[intersect(c("id", "path", "text"), names(spec$inputs))]
+  rlang::hash(list(spec_fingerprint(spec), content))
+}
 
 # The reasons not to start a run (empty when it can start). decisions checks the
 # question here, in this process: an error inside a chunk counts as a key
@@ -185,18 +190,24 @@ app_server <- function(input, output, session, deps = app_deps()) {
     file.path(dir, kind, folders)
   }
   keep_uploads <- function(files) uploads <<- c(uploads, files$datapath)
+  job <- new.env(parent = emptyenv())
+  # Files are deleted only when no chunk is in flight: a chunk reads its images
+  # and references until it ends, and a missing file would stop the day
+  after_chunk <- function(delete) {
+    if (isTRUE(job$in_flight)) job$deletes <- c(job$deletes, delete) else delete()
+  }
   session$onSessionEnded(\() {
     shiny::removeResourcePath(prefix)
-    unlink(dir, recursive = TRUE)
     remove_uploads(uploads)
+    after_chunk(\() unlink(dir, recursive = TRUE))
   })
 
-  # The addresses of the thumbnails of images ("" for an image that cannot be read)
+  # The thumbnail of an image, and its address ("" for an image that cannot be read)
+  thumb_file <- function(path) file.path(dir, "thumbs", paste0(rlang::hash(path), ".jpg"))
   thumb <- function(paths) {
     purrr::map_chr(paths, \(path) {
-      name <- paste0(rlang::hash(path), ".jpg")
-      dest <- file.path(dir, "thumbs", name)
-      if (file.exists(dest) || make_thumb(path, dest)) paste0(prefix, "/", name) else ""
+      dest <- thumb_file(path)
+      if (file.exists(dest) || make_thumb(path, dest)) paste0(prefix, "/", basename(dest)) else ""
     })
   }
 
@@ -208,14 +219,13 @@ app_server <- function(input, output, session, deps = app_deps()) {
   image_upload <- shiny::reactiveVal(NULL)
   csv_file <- shiny::reactiveVal(NULL)
   text_kind <- shiny::reactiveVal("paste")
-  results <- shiny::reactiveVal(NULL) # list(answers, key, saved)
+  results <- shiny::reactiveVal(NULL) # list(answers, key, saved, token of the run)
   mean_tokens <- shiny::reactiveVal(NULL) # list(fingerprint, mean)
   session_cost <- shiny::reactiveVal(0)
   usage <- shiny::reactiveVal(deps$store$read())
   notice <- shiny::reactiveVal(character())
   running <- shiny::reactiveVal(FALSE)
   rows_version <- shiny::reactiveVal(0) # renders the answer rows again
-  job <- new.env(parent = emptyenv())
 
   # --- The spec of the sidebar --------------------------------------------------
   text_upload <- shiny::reactive({
@@ -315,7 +325,10 @@ app_server <- function(input, output, session, deps = app_deps()) {
     files <- input$upload_images
     keep_uploads(files)
     notice(character())
-    unlink(image_upload()$dir, recursive = TRUE)
+    old <- image_upload()
+    if (!is.null(old)) {
+      after_chunk(\() unlink(c(old$dir, thumb_file(old$inputs$path)), recursive = TRUE))
+    }
     read <- read_images(files, dir = new_dir("images"))
     bad <- thumb(read$inputs$path) == ""
     image_upload(list(
@@ -370,7 +383,7 @@ app_server <- function(input, output, session, deps = app_deps()) {
     })
     shiny::observeEvent(input[[paste0("answer_remove_", i)]], {
       q <- question()
-      if (i > length(q$answers) || length(q$answers) <= ANSWER_RANGE[[q$type]][1]) return()
+      if (i > length(q$answers) || length(q$answers) <= answer_range(q$type)[1]) return()
       q$answers <- q$answers[-i]
       question(q)
       refs(refs()[-i])
@@ -380,7 +393,7 @@ app_server <- function(input, output, session, deps = app_deps()) {
   shiny::observeEvent(input$answer_add, {
     q <- question()
     n <- length(q$answers)
-    if (q$type == "noul" || n >= ANSWER_RANGE[[q$type]][2]) return()
+    if (n >= answer_range(q$type)[2]) return()
     name <- utils::tail(make.unique(c(names(q$answers), paste("answer", n + 1)), sep = " "), 1)
     q$answers <- c(q$answers, stats::setNames("", name))
     question(q)
@@ -392,7 +405,7 @@ app_server <- function(input, output, session, deps = app_deps()) {
     q$answers <- if (input$qtype == "noul") {
       c(true = "", false = "")
     } else {
-      utils::head(q$answers, ANSWER_RANGE[[input$qtype]][2])
+      utils::head(q$answers, answer_range(input$qtype)[2])
     }
     q$type <- input$qtype
     question(q)
@@ -467,8 +480,10 @@ app_server <- function(input, output, session, deps = app_deps()) {
   })
 
   # Each chunk runs in a mirai daemon (or here, when async is FALSE); its
-  # accounts are kept in this process, also when the session has ended
+  # accounts are kept in this process, also when the session has ended. The
+  # files that waited for the chunk are deleted when it ends.
   task <- shiny::ExtendedTask$new(function(spec, rows) {
+    job$in_flight <- TRUE
     chunk <- tryCatch(
       if (deps$async) {
         mirai::mirai(
@@ -480,8 +495,31 @@ app_server <- function(input, output, session, deps = app_deps()) {
       },
       error = \(e) promises::promise_reject(e)
     )
-    promises::then(promises::promise_resolve(chunk), \(answers) account_chunk(answers, deps))
+    promises::then(promises::promise_resolve(chunk), \(answers) account_chunk(answers, deps)) |>
+      promises::finally(\() {
+        job$in_flight <- FALSE
+        deletes <- job$deletes
+        job$deletes <- NULL
+        purrr::walk(deletes, \(delete) delete())
+      }) |>
+      # A closed session has no task to finish (it would fail on its destroyed
+      # values): its chunk was counted above, and the promise stays open
+      promises::then(
+        onFulfilled = \(done) if (session$isClosed()) never_settles() else done,
+        onRejected = \(e) if (session$isClosed()) never_settles() else stop(e)
+      )
   })
+  never_settles <- function() promises::promise(\(resolve, reject) NULL)
+  # Before each chunk, its images and references must exist. A missing file
+  # ends the run; decide() would abort, and that would stop the day.
+  run_next <- function() {
+    rows <- job$chunks[[job$done + 1L]]
+    if (!all(file.exists(chunk_files(job$spec, rows)))) {
+      notice("The files of this run are not available. Upload them again.")
+      return(end_run())
+    }
+    task$invoke(job$spec, rows)
+  }
 
   start_run <- function(n) {
     if (running()) return()
@@ -504,9 +542,13 @@ app_server <- function(input, output, session, deps = app_deps()) {
     job$done <- 0L
     job$stop <- FALSE
     job$answers <- NULL
+    # The run writes its answers only while the card holds the answers that it
+    # found or wrote: a sample loaded during the run keeps its saved answers
+    job$token <- (job$token %||% 0L) + 1L
+    results(utils::modifyList(results() %||% list(), list(token = job$token)))
     running(TRUE)
     session$sendCustomMessage("run-state", TRUE)
-    task$invoke(s, job$chunks[[1]])
+    run_next()
   }
   end_run <- function() {
     running(FALSE)
@@ -523,7 +565,8 @@ app_server <- function(input, output, session, deps = app_deps()) {
     session_cost(session_cost() + done$cost)
     if (!is.null(done$usage)) usage(done$usage)
     job$answers <- dplyr::bind_rows(job$answers, done$answers)
-    results(list(answers = job$answers, key = job$key, saved = FALSE))
+    shown <- identical(results()$token, job$token)
+    if (shown) results(list(answers = job$answers, key = job$key, saved = FALSE, token = job$token))
     # Only calls with tokens count: a mean of 0 would make the next run look free
     tokens <- job$answers$.input_tokens
     tokens <- tokens[!is.na(tokens) & tokens > 0]
@@ -532,8 +575,9 @@ app_server <- function(input, output, session, deps = app_deps()) {
     }
     reason <- stop_reason(deps)
     if (!is.null(reason)) notice(error_message(reason))
-    if (job$stop || !is.null(reason) || job$done >= length(job$chunks)) return(end_run())
-    task$invoke(job$spec, job$chunks[[job$done + 1L]])
+    # A run whose answers nobody sees stops (its chunk is counted all the same)
+    if (job$stop || !shown || !is.null(reason) || job$done >= length(job$chunks)) return(end_run())
+    run_next()
   }
   shiny::observe({
     if (!task$status() %in% c("success", "error")) return()
@@ -579,9 +623,11 @@ app_server <- function(input, output, session, deps = app_deps()) {
   target <- shiny::reactive(target_answer(question(), input$target))
   table <- shiny::reactive({
     r <- results()
-    if (is.null(r) || !identical(r$key, key())) return(NULL)
+    if (is.null(r$answers) || !identical(r$key, key())) return(NULL)
     answers_table(spec(), r$answers, target())
   })
+  # The table of the downloads: no rows while the card shows no answers
+  download_table <- shiny::reactive(table() %||% empty_table(spec()))
   stats <- shiny::reactive(if (!is.null(table())) answer_stats(table(), spec(), target()))
   output$stats <- shiny::renderUI({
     if (is.null(stats())) return(NULL)
@@ -609,7 +655,7 @@ app_server <- function(input, output, session, deps = app_deps()) {
   )
   output$download_answers <- shiny::downloadHandler(
     filename = \() paste0(run_name(spec()), "-answers.csv"),
-    content = \(file) readr::write_file(answers_csv(table() %||% empty_table(spec())), file)
+    content = \(file) readr::write_file(answers_csv(download_table()), file)
   )
 
   # --- Outputs: R code and bundle ---------------------------------------------
@@ -630,7 +676,7 @@ app_server <- function(input, output, session, deps = app_deps()) {
   )
   output$download_bundle <- shiny::downloadHandler(
     filename = zip_name,
-    content = \(file) write_bundle(spec(), table() %||% empty_table(spec()), file, run_date())
+    content = \(file) write_bundle(spec(), download_table(), file, run_date())
   )
 
   # --- Outputs: status ----------------------------------------------------------

@@ -108,3 +108,9 @@ chunk_usage <- function(answers) {
 estimate_cost <- function(spec, n, mean_tokens = NULL) {
   n * (mean_tokens %||% TOKENS_GUESS[[spec$mode]]) * PRICE_PER_TOKEN
 }
+
+# The files that a chunk of a spec reads: the images of its rows and every
+# reference. decide() aborts when one is missing, so the server checks them first.
+chunk_files <- function(spec, rows) {
+  c(character(), if (spec$mode == "image") spec$inputs$path[rows], unlist(spec$references, use.names = FALSE))
+}

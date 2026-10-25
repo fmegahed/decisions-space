@@ -10,7 +10,7 @@
 answer_rows <- function(question) {
   answers <- question$answers
   fixed <- question$type == "noul"
-  range <- ANSWER_RANGE[[question$type]] %||% c(2, 2)
+  range <- answer_range(question$type)
   rows <- purrr::map(seq_along(answers), \(i) {
     shiny::div(
       class = "answer-row",

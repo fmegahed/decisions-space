@@ -32,3 +32,10 @@ test_that("the fingerprint changes when the question changes", {
   expect_false(identical(spec_fingerprint(tex), spec_fingerprint(edited)))
   expect_identical(spec_fingerprint(tex), spec_fingerprint(sample_spec("textiles")))
 })
+
+test_that("answer_range() gives the number of answers of each type", {
+  expect_identical(answer_range("choice"), c(2, 6))
+  expect_identical(answer_range("score"), c(2, 5))
+  # Yes / no has the two fixed answers true and false
+  expect_identical(answer_range("noul"), c(2, 2))
+})

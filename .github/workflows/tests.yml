@@ -34,6 +34,7 @@ jobs:
             any::tibble
             any::readr
             any::janitor
+            any::openssl
             any::jsonlite
             any::httr2
             any::yardstick

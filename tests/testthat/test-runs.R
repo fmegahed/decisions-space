@@ -109,3 +109,10 @@ test_that("run_chunk() passes the inputs, references and image settings", {
   expect_identical(seen$text, inj$inputs$text[1:10])
   expect_null(seen$image)
 })
+
+test_that("chunk_files() gives the images of the rows and every reference", {
+  tex <- sample_spec("textiles")
+  files <- chunk_files(tex, 1:3)
+  expect_identical(files, c(tex$inputs$path[1:3], unlist(tex$references, use.names = FALSE)))
+  expect_identical(chunk_files(sample_spec("injuries"), 1:3), character())
+})

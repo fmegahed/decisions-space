@@ -14,6 +14,11 @@ sample_lookup <- function(id) {
 # A function with the signature of decide(). `lookup` has the column `input`
 # and the columns of a decide() output. `environment(f)$calls` counts the calls.
 mock_decide <- function(lookup = NULL, error = NULL, abort = FALSE) {
+  # The values are taken now: the mock can run in a mirai daemon, where the
+  # functions of the tests do not exist
+  force(lookup)
+  force(error)
+  force(abort)
   calls <- 0L
   function(decider, questions, text = NULL, image = NULL, references = NULL,
            max_size = 768, upscale = FALSE, crop = "none", max_active = 10,

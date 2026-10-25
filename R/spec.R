@@ -7,6 +7,10 @@
 # A spec is list(mode, question, references, inputs, source, name). The inputs
 # are a tibble with id, path, text, file and label.
 
+# The smallest and the largest number of answers of a type. Yes / no has the
+# two fixed answers true and false.
+answer_range <- function(type) ANSWER_RANGE[[type]] %||% c(2, 2)
+
 # Problems of a question, as a character vector (empty when it is valid)
 check_question <- function(question) {
   answers <- question$answers
