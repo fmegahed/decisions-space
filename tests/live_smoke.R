@@ -12,7 +12,7 @@ if (length(args) < 1) {
   stop("Give the path of the .Renviron as the first argument.", call. = FALSE)
 }
 renviron <- args[[1]]
-log <- if (length(args) >= 2) {
+call_log <- if (length(args) >= 2) {
   args[[2]]
 } else {
   "C:/Users/megahefm/Dropbox/Miami/Code/claude/fine_tuned_jev/replication_materials/calls/typesafe-calls.csv"
@@ -29,12 +29,14 @@ cat("Key", KEY_VAR, ":", if (nzchar(Sys.getenv(KEY_VAR))) "set" else "unset", "\
 if (!nzchar(Sys.getenv(KEY_VAR))) {
   stop(KEY_VAR, " is unset. No call was made and nothing was logged.", call. = FALSE)
 }
-if (!file.exists(log)) stop("The call log does not exist: ", log, call. = FALSE)
+check_smoke_log(call_log)
 
-# The first input of each sample: one call each
-now <- Sys.time()
+# The first input of each sample: one call each. Each row goes to the log at
+# once, with the time of its call, so a later failure cannot lose a paid call.
 answers <- purrr::map(c("textiles", "injuries"), \(id) {
-  run_chunk(sample_spec(id), 1L) |> dplyr::mutate(sample = id, .before = 1)
+  one <- run_chunk(sample_spec(id), 1L)
+  append_smoke_rows(smoke_row(one, Sys.time()), call_log)
+  dplyr::mutate(one, sample = id, .before = 1)
 }) |>
   dplyr::bind_rows()
 
@@ -46,6 +48,4 @@ answers |>
   ) |>
   print()
 cat("Tokens:", chunk_usage(answers)$tokens, "\n")
-
-append_smoke_rows(smoke_row(answers, now), log)
-cat("Logged", nrow(answers), "rows in", log, "\n")
+cat("Logged", nrow(answers), "rows in", call_log, "\n")

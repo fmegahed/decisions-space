@@ -46,3 +46,18 @@ test_that("append_smoke_rows adds lines and keeps the old ones", {
   expect_identical(lines[1], paste(SMOKE_COLUMNS, collapse = ","))
   expect_match(lines[2], "^2026-11-02T10:11:12Z,frame1.jpg,space-smoke,jev-1.14.0,,200,432,2000,,")
 })
+
+test_that("check_smoke_log accepts a log with the right header and a final newline", {
+  log <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c(paste(SMOKE_COLUMNS, collapse = ","), "a,b"), log)
+  expect_silent(check_smoke_log(log))
+})
+
+test_that("check_smoke_log stops for a missing file, a wrong header or no final newline", {
+  log <- withr::local_tempfile(fileext = ".csv")
+  expect_error(check_smoke_log(log), "does not exist")
+  writeLines(c("time_utc,call_id", "a,b"), log)
+  expect_error(check_smoke_log(log), "header")
+  cat(paste(SMOKE_COLUMNS, collapse = ","), "\na,b", sep = "", file = log)
+  expect_error(check_smoke_log(log), "newline")
+})

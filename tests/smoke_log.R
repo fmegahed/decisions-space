@@ -31,3 +31,19 @@ append_smoke_rows <- function(rows, log) {
   readr::write_csv(rows[SMOKE_COLUMNS], log, append = TRUE, na = "")
   invisible(log)
 }
+
+# Stop, before any call, when the log cannot take a new row: it must exist,
+# have the header of SMOKE_COLUMNS and end with a newline.
+check_smoke_log <- function(log) {
+  if (!file.exists(log)) stop("The call log does not exist: ", log, call. = FALSE)
+  header <- readLines(log, n = 1, warn = FALSE)
+  if (!identical(header, paste(SMOKE_COLUMNS, collapse = ","))) {
+    stop("The header of the call log is not the expected one: ", log, call. = FALSE)
+  }
+  size <- file.size(log)
+  last <- readBin(log, "raw", n = size)[size]
+  if (size == 0 || last != as.raw(0x0a)) {
+    stop("The call log does not end with a newline: ", log, call. = FALSE)
+  }
+  invisible(log)
+}
