@@ -114,3 +114,35 @@ estimate_cost <- function(spec, n, mean_tokens = NULL) {
 chunk_files <- function(spec, rows) {
   c(character(), if (spec$mode == "image") spec$inputs$path[rows], unlist(spec$references, use.names = FALSE))
 }
+
+# The reasons not to start a run (empty when it can start). decisions checks the
+# question here, in this process: an error inside a chunk counts as a key
+# problem, and it stops the runs of the day.
+run_problems <- function(spec) {
+  if (nrow(spec$inputs) == 0) {
+    return(if (spec$mode == "image") "Add images first." else "Add texts first.")
+  }
+  problems <- check_question(spec$question)
+  if (length(problems) > 0) return(problems)
+  valid <- tryCatch(!is.null(as_decisions_question(spec$question)), error = \(e) FALSE)
+  if (!valid) {
+    return(paste(
+      "The app cannot use this question.",
+      "Write the instructions, and give each answer a different name."
+    ))
+  }
+  character()
+}
+
+# One log line for each chunk: the time, the counts, the tokens, the cost and
+# the error categories. Never an input, a file name, the question or an
+# .error text.
+log_chunk <- function(now, n, use, categories) {
+  counts <- table(categories[!is.na(categories)])
+  errors <- if (length(counts) == 0) "none" else paste(names(counts), counts, collapse = ", ")
+  message(sprintf(
+    "%s chunk: %d inputs, %d calls, %.0f tokens, USD %.6f, errors: %s",
+    format(now, "%Y-%m-%d %H:%M:%S UTC", tz = "UTC"), n, use$calls, use$tokens,
+    use$cost, errors
+  ))
+}

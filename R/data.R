@@ -297,3 +297,30 @@ match_labels <- function(inputs, answers) {
   inputs$label <- answer_names[hit]
   list(inputs = inputs, problems = sprintf("%s is not an answer", unmatched))
 }
+
+# A small JPEG copy of an image (at most 320 pixels on the long side) for the
+# page; FALSE when the image cannot be read
+make_thumb <- function(path, dest) {
+  tryCatch(
+    {
+      magick::image_read(path)[1] |>
+        magick::image_background("white") |>
+        magick::image_scale("320x320>") |>
+        magick::image_write(dest, format = "jpeg")
+      TRUE
+    },
+    error = \(e) FALSE
+  )
+}
+
+# Delete the files of Shiny uploads, and their folders when they are empty
+remove_uploads <- function(paths) {
+  unlink(paths)
+  folders <- setdiff(
+    unique(normalizePath(dirname(paths), winslash = "/", mustWork = FALSE)),
+    normalizePath(tempdir(), winslash = "/")
+  )
+  files <- lengths(lapply(folders, list.files, all.files = TRUE, no.. = TRUE))
+  empty <- folders[dir.exists(folders) & files == 0]
+  unlink(empty, recursive = TRUE)
+}

@@ -20,6 +20,11 @@ SOURCE_CHOICES <- c(
   "Your own data" = "upload"
 )
 
+# The sources of the data that go with a mode
+source_choices <- function(mode) {
+  SOURCE_CHOICES[SOURCE_CHOICES %in% c(if (mode == "image") "textiles" else "injuries", "upload")]
+}
+
 # The file types of the image uploads
 IMAGE_ACCEPT <- paste0(".", IMAGE_EXTENSIONS)
 

@@ -99,3 +99,11 @@ sample_answers <- function(id) {
   saved$answers$jev |>
     dplyr::mutate(id = sample_spec(id)$inputs$id, .before = 1)
 }
+
+# The two samples, read once for each R process
+SAMPLE_CACHE <- new.env(parent = emptyenv())
+sample_data <- function(id) {
+  SAMPLE_CACHE[[id]] <- SAMPLE_CACHE[[id]] %||%
+    list(spec = sample_spec(id), answers = sample_answers(id))
+  SAMPLE_CACHE[[id]]
+}

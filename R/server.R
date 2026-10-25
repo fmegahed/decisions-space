@@ -40,61 +40,9 @@ mock_deps <- function(path = file.path(APP_ROOT, "tests", "testthat", "helper-mo
   list(decide_fn = env$mock_decide(lookup), store = usage_store_memory())
 }
 
-# The two samples, read once for each R process
-SAMPLE_CACHE <- new.env(parent = emptyenv())
-sample_data <- function(id) {
-  SAMPLE_CACHE[[id]] <- SAMPLE_CACHE[[id]] %||%
-    list(spec = sample_spec(id), answers = sample_answers(id))
-  SAMPLE_CACHE[[id]]
-}
-
-# The sources of the data that go with a mode
-source_choices <- function(mode) {
-  SOURCE_CHOICES[SOURCE_CHOICES %in% c(if (mode == "image") "textiles" else "injuries", "upload")]
-}
-
-# The answers belong to one setup and one set of inputs. The ids alone repeat
-# ("Text 1", "Row 1", "001_a.jpg"), so the key holds the paths and the texts too.
-answers_key <- function(spec) {
-  content <- spec$inputs[intersect(c("id", "path", "text"), names(spec$inputs))]
-  rlang::hash(list(spec_fingerprint(spec), content))
-}
-
-# The reasons not to start a run (empty when it can start). decisions checks the
-# question here, in this process: an error inside a chunk counts as a key
-# problem, and it stops the runs of the day.
-run_problems <- function(spec) {
-  if (nrow(spec$inputs) == 0) {
-    return(if (spec$mode == "image") "Add images first." else "Add texts first.")
-  }
-  problems <- check_question(spec$question)
-  if (length(problems) > 0) return(problems)
-  valid <- tryCatch(!is.null(as_decisions_question(spec$question)), error = \(e) FALSE)
-  if (!valid) {
-    return(paste(
-      "The app cannot use this question.",
-      "Write the instructions, and give each answer a different name."
-    ))
-  }
-  character()
-}
-
 # The category that stops the runs today, or NULL
 stop_reason <- function(deps) {
   if (identical(deps$state$stop_day, utc_date(deps$now()))) deps$state$stop_reason
-}
-
-# One log line for each chunk: the time, the counts, the tokens, the cost and
-# the error categories. Never an input, a file name, the question or an
-# .error text.
-log_chunk <- function(now, n, use, categories) {
-  counts <- table(categories[!is.na(categories)])
-  errors <- if (length(counts) == 0) "none" else paste(names(counts), counts, collapse = ", ")
-  message(sprintf(
-    "%s chunk: %d inputs, %d calls, %.0f tokens, USD %.6f, errors: %s",
-    format(now, "%Y-%m-%d %H:%M:%S UTC", tz = "UTC"), n, use$calls, use$tokens,
-    use$cost, errors
-  ))
 }
 
 # The accounts of a chunk, in the main R process (never in a daemon): add the
@@ -112,68 +60,6 @@ account_chunk <- function(answers, deps) {
   }
   log_chunk(now, nrow(answers), use, categories)
   list(answers = answers, cost = use$cost, usage = usage)
-}
-
-# A small JPEG copy of an image (at most 320 pixels on the long side) for the
-# page; FALSE when the image cannot be read
-make_thumb <- function(path, dest) {
-  tryCatch(
-    {
-      magick::image_read(path)[1] |>
-        magick::image_background("white") |>
-        magick::image_scale("320x320>") |>
-        magick::image_write(dest, format = "jpeg")
-      TRUE
-    },
-    error = \(e) FALSE
-  )
-}
-
-# The answers table as the page shows it: the input, the answer, the
-# probability of each answer, the label, the tokens, the seconds, the problem
-table_view <- function(table, spec) {
-  answers <- names(spec$question$answers)
-  probs <- table[paste0("p_", janitor::make_clean_names(answers, case = "none"))] |>
-    stats::setNames(paste("p", answers))
-  shown <- tibble::tibble(Input = dplyr::coalesce(table$text, table$file), Answer = table$answer) |>
-    dplyr::bind_cols(probs) |>
-    dplyr::mutate(
-      Label = table$label, Tokens = as.integer(table$tokens), Seconds = table$seconds,
-      Problem = table$problem
-    )
-  empty <- c(Label = all(is.na(table$label)), Problem = all(is.na(table$problem)))
-  shown |> dplyr::select(-dplyr::any_of(names(empty)[empty]))
-}
-
-# The answers table of a spec with no answers (for a download before a run)
-empty_table <- function(spec) {
-  answers <- empty_answers(spec$question, 0) |> dplyr::mutate(id = character(), .before = 1)
-  answers_table(spec, answers, target_answer(spec$question))
-}
-
-# The files of the bundle of a spec, as write_bundle() makes them (a folder
-# ends in "/"; test-server.R checks that the two agree)
-bundle_names <- function(spec) {
-  name <- run_name(spec)
-  has_refs <- nrow(reference_files(spec)) > 0 && spec$source != "textiles"
-  has_data <- spec$mode == "text" && spec$source == "upload" &&
-    is.null(spec$text_column) && nrow(spec$inputs) > 0
-  c(
-    paste0(name, c(".R", "-setup.json", "-answers.csv")),
-    if (has_refs) "references/", if (has_data) "data.csv", "README.md"
-  )
-}
-
-# Delete the files of Shiny uploads, and their folders when they are empty
-remove_uploads <- function(paths) {
-  unlink(paths)
-  folders <- setdiff(
-    unique(normalizePath(dirname(paths), winslash = "/", mustWork = FALSE)),
-    normalizePath(tempdir(), winslash = "/")
-  )
-  files <- lengths(lapply(folders, list.files, all.files = TRUE, no.. = TRUE))
-  empty <- folders[dir.exists(folders) & files == 0]
-  unlink(empty, recursive = TRUE)
 }
 
 app_server <- function(input, output, session, deps = app_deps()) {

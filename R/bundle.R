@@ -107,6 +107,19 @@ write_bundle <- function(spec, table, zipfile, date = Sys.Date()) {
   zipfile
 }
 
+# The files of the bundle of a spec, as write_bundle() makes them (a folder
+# ends in "/"; test-bundle.R checks that the two agree)
+bundle_names <- function(spec) {
+  name <- run_name(spec)
+  has_refs <- nrow(reference_files(spec)) > 0 && spec$source != "textiles"
+  has_data <- spec$mode == "text" && spec$source == "upload" &&
+    is.null(spec$text_column) && nrow(spec$inputs) > 0
+  c(
+    paste0(name, c(".R", "-setup.json", "-answers.csv")),
+    if (has_refs) "references/", if (has_data) "data.csv", "README.md"
+  )
+}
+
 # --- Import ---------------------------------------------------------------
 
 IMPORT_REFUSED <- "This file was not made by this app."

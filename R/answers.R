@@ -81,3 +81,32 @@ help_note <- function(spec, stats, target, saved = FALSE) {
 answers_csv <- function(table) {
   readr::format_csv(table, na = "")
 }
+
+# The answers belong to one setup and one set of inputs. The ids alone repeat
+# ("Text 1", "Row 1", "001_a.jpg"), so the key holds the paths and the texts too.
+answers_key <- function(spec) {
+  content <- spec$inputs[intersect(c("id", "path", "text"), names(spec$inputs))]
+  rlang::hash(list(spec_fingerprint(spec), content))
+}
+
+# The answers table as the page shows it: the input, the answer, the
+# probability of each answer, the label, the tokens, the seconds, the problem
+table_view <- function(table, spec) {
+  answers <- names(spec$question$answers)
+  probs <- table[paste0("p_", janitor::make_clean_names(answers, case = "none"))] |>
+    stats::setNames(paste("p", answers))
+  shown <- tibble::tibble(Input = dplyr::coalesce(table$text, table$file), Answer = table$answer) |>
+    dplyr::bind_cols(probs) |>
+    dplyr::mutate(
+      Label = table$label, Tokens = as.integer(table$tokens), Seconds = table$seconds,
+      Problem = table$problem
+    )
+  empty <- c(Label = all(is.na(table$label)), Problem = all(is.na(table$problem)))
+  shown |> dplyr::select(-dplyr::any_of(names(empty)[empty]))
+}
+
+# The answers table of a spec with no answers (for a download before a run)
+empty_table <- function(spec) {
+  answers <- empty_answers(spec$question, 0) |> dplyr::mutate(id = character(), .before = 1)
+  answers_table(spec, answers, target_answer(spec$question))
+}

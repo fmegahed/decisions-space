@@ -642,20 +642,6 @@ test_that("texts come from the paste box or from a CSV file", {
   })
 })
 
-test_that("the bundle files of the card are the files of the bundle", {
-  specs <- list(
-    sample_spec("textiles"), sample_spec("injuries"), upload_spec(labelled = TRUE),
-    text_spec(csv = FALSE), text_spec(csv = TRUE)
-  )
-  for (spec in specs) {
-    answers <- empty_answers(spec$question, 0) |> dplyr::mutate(id = character(), .before = 1)
-    table <- answers_table(spec, answers, target_answer(spec$question))
-    zf <- write_bundle(spec, table, withr::local_tempfile(fileext = ".zip"))
-    top <- stringr::str_replace(zip::zip_list(zf)$filename, "/.*", "/") |> unique()
-    expect_setequal(bundle_names(spec), top)
-  }
-})
-
 test_that("SPACE_MOCK=1 uses the mock and a store in memory", {
   withr::local_envvar(SPACE_MOCK = "1")
   # The mock is found from the app folder, not from the working folder
