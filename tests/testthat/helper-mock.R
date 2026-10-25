@@ -36,6 +36,7 @@ mock_decide <- function(lookup = NULL, error = NULL, abort = FALSE) {
       )
     fallback[[first]] <- 1
     if (".score" %in% names(fallback)) fallback$.score <- 1
+    if (is.null(lookup)) return(fallback)
     found <- match(inputs, lookup$input)
     rows <- lookup[found[!is.na(found)], names(fallback)[names(fallback) %in% names(lookup)]]
     out <- fallback

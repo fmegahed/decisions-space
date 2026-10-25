@@ -45,7 +45,7 @@ test_that("mock_decide() counts calls and fills a score question", {
   expect_true(all(is.na(out$.pred_nominal)))
   score <- modifyList(tex, list(question = list(
     type = "score", instructions = "Rate it.", answers = c(low = "", mid = "", high = ""))))
-  out <- run_chunk(score, 1:2, mock_decide(sample_lookup("textiles")))
+  out <- run_chunk(score, 1:2, mock_decide())
   expect_true(".score" %in% names(out))
   expect_identical(out$.pred_low, c(1, 1))
 })
