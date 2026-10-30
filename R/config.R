@@ -4,8 +4,8 @@
 # behaviour.
 
 # Version of this app
-APP_VERSION <- "1.0.0"
-APP_DATE <- "24 October 2026"
+APP_VERSION <- "1.0.1"
+APP_DATE <- "30 October 2026"
 
 # Model used for every call. This is the ONLY place a model id may be written
 # (tests/testthat/test-config.R enforces this).
@@ -60,9 +60,11 @@ USAGE_TOKEN_VAR <- "HF_USAGE_TOKEN"
 USAGE_REPO <- "fmegahed/decisions-space-usage"
 STATUS_URL <- "https://raw.githubusercontent.com/fmegahed/decisions-space/main/status/status.csv"
 
-# Address of the Space, and the video on YouTube ("" hides the Video button)
+# Address of the Space, and the help video on YouTube ("" hides its buttons)
+# with its length in whole minutes (the video runs 4:59)
 SPACE_HOST <- "https://fmegahed-decisions.hf.space"
 VIDEO_URL <- "https://youtu.be/4WE-ykXzK1g"
+VIDEO_MINUTES <- 5
 
 # The values that the help text uses, in one named list
 app_config <- function() {
@@ -77,6 +79,6 @@ app_config <- function() {
     max_description = MAX_DESCRIPTION, answer_range = ANSWER_RANGE,
     max_references = MAX_REFERENCES, chunk_size = CHUNK_SIZE,
     image_settings = IMAGE_SETTINGS, space_host = SPACE_HOST,
-    video_url = VIDEO_URL
+    video_url = video_url(), video_minutes = VIDEO_MINUTES
   )
 }

@@ -56,7 +56,10 @@ help_text <- function(key) {
   )
 }
 
-# The text of the About tab, as Markdown
+# The text of the About tab, as Markdown. HELP_VIDEO_MARK marks the place of
+# the button that opens the help video (about_panel() puts it there).
+HELP_VIDEO_MARK <- "<!-- help-video-button -->"
+
 about_text <- function(cfg = app_config()) {
   usd <- \(x) paste("USD", format(x, big.mark = ","))
   num <- \(x) format(x, big.mark = ",")
@@ -65,6 +68,19 @@ about_text <- function(cfg = app_config()) {
     "",
     "This app asks Jev, a decision model of TypeSafe, a question about each image or text in a set. For each input, it shows the answer and the probability of each answer. It also gives the R code of the run and a bundle with the setup and the answers. You need no key and no account.",
     "",
+    if (nzchar(cfg$video_url)) {
+      c(
+        "## Help video",
+        "",
+        sprintf(
+          "A %d-minute video shows how to use the app: a sample of images, your own images, a text sample and your own texts. It explains the three question types (Yes / no, Choice and Score), the answers and the R code. Watch it here, or [on YouTube](%s) with chapters.",
+          cfg$video_minutes, cfg$video_url
+        ),
+        "",
+        HELP_VIDEO_MARK,
+        ""
+      )
+    },
     "## Package",
     "",
     sprintf(
@@ -114,6 +130,9 @@ about_text <- function(cfg = app_config()) {
       "decisions-space %s (%s) \u00b7 decisions %s \u00b7 %s",
       cfg$version, cfg$date, decisions_version(), cfg$model
     ),
+    "",
+    "- 1.0.1: the help video (in the intro, the top bar and this page); the buttons of the top bar on one line.",
+    "- 1.0.0: the first public version.",
     "",
     "## Cite",
     "",

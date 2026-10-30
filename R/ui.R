@@ -125,17 +125,18 @@ top_bar <- function(video) {
         class = "chip", shiny::span(class = "dot", `aria-hidden` = "true", "\u25cf"), " ",
         shiny::textOutput("status_chip", inline = TRUE)
       ),
-      if (nzchar(video)) {
-        shiny::tags$button(
-          id = "open_video", type = "button", class = "btn btn-quiet",
-          `aria-haspopup` = "dialog", "Video"
-        )
-      },
       shiny::div(
         class = "import-btn",
         upload_input("import_file", NULL, c(".zip", ".json"), button = "Import")
       ),
-      samples_menu()
+      samples_menu(),
+      # The quiet way to the help video: on every tab, and after Hide
+      if (nzchar(video)) {
+        shiny::tags$button(
+          id = "open_video_bar", type = "button", class = "btn btn-quiet help-video-bar open-video",
+          `aria-haspopup` = "dialog", shiny::span(class = "tri", `aria-hidden` = "true"), "Help video"
+        )
+      }
     )
   )
 }
@@ -205,7 +206,17 @@ sidebar <- function() {
 
 # --- Build tab: cards -------------------------------------------------------
 
-intro_card <- function() {
+# The yellow button that opens the help video (in the intro and in About)
+help_video_button <- function(id) {
+  shiny::tags$button(
+    id = id, type = "button", class = "btn-help-video open-video", `aria-haspopup` = "dialog",
+    shiny::span(class = "play", `aria-hidden` = "true"),
+    sprintf("Watch our %d-minute intro video on how to use this app", VIDEO_MINUTES)
+  )
+}
+
+# The intro, with the help video as the first step of a first visit
+intro_card <- function(video = video_url()) {
   step <- \(n, name, text) {
     shiny::tags$li(
       shiny::span(class = "num", `aria-hidden` = "true", n),
@@ -216,7 +227,8 @@ intro_card <- function() {
     id = "intro", class = "card intro", `aria-label` = "Intro",
     shiny::div(
       shiny::p(class = "intro-lead", "Ask a model a question about each image or text."),
-      shiny::p(class = "intro-help", help_text("intro"), " ", shiny::actionLink("intro_hide", "Hide"))
+      shiny::p(class = "intro-help", help_text("intro"), " ", shiny::actionLink("intro_hide", "Hide")),
+      if (nzchar(video)) shiny::div(class = "help-video-row", help_video_button("open_video"))
     ),
     shiny::tags$ol(
       class = "steps",
@@ -318,10 +330,12 @@ build_panel <- function() {
 # --- About and Uptime tabs --------------------------------------------------
 
 about_panel <- function() {
-  # The About text is Markdown; its links open in a new tab
+  # The About text is Markdown; its links open in a new tab. The button of
+  # the help video goes at its mark.
   html <- shiny::markdown(help_text("about")) |>
     as.character() |>
-    stringr::str_replace_all("<a href=", '<a target="_blank" rel="noopener" href=')
+    stringr::str_replace_all("<a href=", '<a target="_blank" rel="noopener" href=') |>
+    stringr::str_replace(stringr::fixed(HELP_VIDEO_MARK), as.character(help_video_button("open_video_about")))
   shiny::div(class = "page card", shiny::div(class = "bd prose", htmltools::HTML(html)))
 }
 
@@ -371,11 +385,11 @@ video_dialog <- function(url) {
     id = "video_dialog", class = "video-dialog", `aria-labelledby` = "video_title",
     shiny::div(
       class = "video-head",
-      shiny::h2(id = "video_title", "Video"),
+      shiny::h2(id = "video_title", "Help video"),
       shiny::tags$button(id = "close_video", type = "button", class = "btn btn-quiet sm", "Close")
     ),
     shiny::tags$iframe(
-      id = "video_frame", class = "video-frame", title = "Video of the decisions app",
+      id = "video_frame", class = "video-frame", title = "Help video: how to use the decisions app",
       `data-src` = video_embed(url), allow = "autoplay; encrypted-media; picture-in-picture; fullscreen",
       referrerpolicy = "strict-origin-when-cross-origin"
     )

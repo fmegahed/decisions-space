@@ -20,6 +20,8 @@ The app uses the R package [decisions](https://github.com/fmegahed/decisions) (v
 
 Open the app: <https://huggingface.co/spaces/fmegahed/decisions>
 
+Help video (5 minutes, with chapters): <https://youtu.be/4WE-ykXzK1g>
+
 ## Privacy
 
 Your images, texts and references go to TypeSafe (Jev). Do not upload confidential data. The app keeps no input after your session. It stores only the daily totals of calls, tokens and cost. The bundle and the logs hold no key.
@@ -87,4 +89,4 @@ Fadel M. Megahed (Miami University) and Ying-Ju (Tessa) Chen (University of Dayt
 If you use the package or the app, cite both:
 
 - Megahed, F. M., & Chen, Y.-J. (2026). *decisions: Typed decisions from decision models* (R package version 0.1.0). https://github.com/fmegahed/decisions
-- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version 1.0.0) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions
+- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version 1.0.1) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions

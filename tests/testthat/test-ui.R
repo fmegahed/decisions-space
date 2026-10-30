@@ -11,9 +11,9 @@ test_that("the page has the version in a meta tag that the status workflow reads
   meta <- find_tags(app_ui(NULL), "meta") |>
     purrr::keep(\(t) identical(htmltools::tagGetAttribute(t, "name"), "app-version"))
   expect_length(meta, 1)
-  expect_identical(htmltools::tagGetAttribute(meta[[1]], "content"), "1.0.0")
+  expect_identical(htmltools::tagGetAttribute(meta[[1]], "content"), "1.0.1")
   # The same pattern as the grep of .github/workflows/status.yml
-  expect_match(page_html(), '<meta name="app-version" content="1.0.0"', fixed = TRUE)
+  expect_match(page_html(), '<meta name="app-version" content="1.0.1"', fixed = TRUE)
 })
 
 test_that("no label or header says How to read", {
@@ -36,14 +36,24 @@ test_that("the Uptime tab names itself Uptime, not Record", {
   expect_no_match(page_html(), ">Record<|\"Record table\"")
 })
 
-test_that("the Video button and its dialog show only when VIDEO_URL is set", {
+test_that("the help video, its buttons and its dialog show only when VIDEO_URL is set", {
   local_global("video_url", \() "")
   html <- page_html()
-  expect_no_match(html, 'id="open_video"', fixed = TRUE)
+  expect_no_match(html, "open-video", fixed = TRUE)
+  expect_no_match(html, "Help video", fixed = TRUE)
   expect_no_match(html, "youtube", fixed = TRUE)
   local_global("video_url", \() "https://www.youtube.com/watch?v=abcdefghijk")
   html <- page_html()
-  expect_match(html, 'id="open_video"', fixed = TRUE)
+  # Three ways in: the intro, the top bar and About
+  for (id in c("open_video", "open_video_bar", "open_video_about")) {
+    expect_match(html, sprintf('id="%s"', id), fixed = TRUE)
+  }
+  expect_match(html, "Watch our 5-minute intro video on how to use this app", fixed = TRUE)
+  # The quiet button comes after Samples, at the end of the top bar
+  expect_match(html, 'id="samples_menu"[\\s\\S]*id="open_video_bar"', perl = TRUE)
+  expect_match(html, '<h2 id="video_title">Help video</h2>', fixed = TRUE)
+  # About links the video on YouTube, where it has chapters
+  expect_match(html, 'href="https://www.youtube.com/watch?v=abcdefghijk">on YouTube</a>', fixed = TRUE)
   expect_match(html, '<dialog[^>]*id="video_dialog"')
   expect_match(
     html, 'data-src="https://www.youtube-nocookie.com/embed/abcdefghijk"', fixed = TRUE

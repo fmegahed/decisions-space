@@ -103,22 +103,26 @@
   });
 
   // ---- Video dialog (only when the page has one) ---------------------------
+  // Two buttons open it: the one of the intro and the one of the top bar.
   // The embed address is set when the dialog opens and cleared when it
   // closes, so nothing loads before a click and the video stops on close.
-  // Escape closes the dialog; Tab stays in the dialog.
+  // Escape closes the dialog; Tab stays in the dialog. Focus goes back to
+  // the button that opened it (some browsers do not focus a clicked button).
 
   var dialog = byId('video_dialog');
-  var openVideo = byId('open_video');
-  if (dialog && openVideo && dialog.showModal) {
+  var openers = document.querySelectorAll('.open-video');
+  if (dialog && openers.length && dialog.showModal) {
     var frame = byId('video_frame');
     var closeButton = byId('close_video');
     var lastFocused = null;
 
-    openVideo.addEventListener('click', function() {
-      lastFocused = document.activeElement;
-      frame.setAttribute('src', frame.getAttribute('data-src'));
-      dialog.showModal();
-      closeButton.focus();
+    Array.prototype.forEach.call(openers, function(opener) {
+      opener.addEventListener('click', function() {
+        lastFocused = opener;
+        frame.setAttribute('src', frame.getAttribute('data-src'));
+        dialog.showModal();
+        closeButton.focus();
+      });
     });
     closeButton.addEventListener('click', function() { dialog.close(); });
     dialog.addEventListener('click', function(event) {
