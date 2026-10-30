@@ -1,0 +1,16 @@
+captures/
+cards/
+captions/
+voiceover/*.mp3
+voiceover/*.json
+voiceover/vo_track.wav
+voiceover/.vo_cache.json
+assets/data/
+filter.txt
+inputs.json
+vo_delays.json
+*.mp4
+*.srt
+tiles_*.png
+strip/
+__pycache__/

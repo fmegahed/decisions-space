@@ -37,6 +37,7 @@ test_that("the Uptime tab names itself Uptime, not Record", {
 })
 
 test_that("the Video button and its dialog show only when VIDEO_URL is set", {
+  local_global("video_url", \() "")
   html <- page_html()
   expect_no_match(html, 'id="open_video"', fixed = TRUE)
   expect_no_match(html, "youtube", fixed = TRUE)

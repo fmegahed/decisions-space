@@ -60,9 +60,9 @@ USAGE_TOKEN_VAR <- "HF_USAGE_TOKEN"
 USAGE_REPO <- "fmegahed/decisions-space-usage"
 STATUS_URL <- "https://raw.githubusercontent.com/fmegahed/decisions-space/main/status/status.csv"
 
-# Address of the Space, and the video (empty until the video exists)
+# Address of the Space, and the video on YouTube ("" hides the Video button)
 SPACE_HOST <- "https://fmegahed-decisions.hf.space"
-VIDEO_URL <- ""
+VIDEO_URL <- "https://youtu.be/4WE-ykXzK1g"
 
 # The values that the help text uses, in one named list
 app_config <- function() {
