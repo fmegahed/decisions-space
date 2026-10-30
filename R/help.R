@@ -131,7 +131,7 @@ about_text <- function(cfg = app_config()) {
       cfg$version, cfg$date, decisions_version(), cfg$model
     ),
     "",
-    "- 1.0.1: the help video (in the intro, the top bar and this page); the buttons of the top bar on one line.",
+    "- 1.0.1: the help video (in the intro, the top bar and this page), whose player starts without the captions of YouTube (the narration is in the video) and can copy and share its link; the buttons of the top bar on one line.",
     "- 1.0.0: the first public version.",
     "",
     "## Cite",

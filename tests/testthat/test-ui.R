@@ -58,6 +58,8 @@ test_that("the help video, its buttons and its dialog show only when VIDEO_URL i
   expect_match(
     html, 'data-src="https://www.youtube-nocookie.com/embed/abcdefghijk"', fixed = TRUE
   )
+  # The player may copy and share its link (the Copy link button of YouTube)
+  expect_match(html, '<iframe[^>]*allow="[^"]*clipboard-write[^"]*web-share')
   # The embed loads only when the dialog opens: the iframe has no src
   expect_no_match(html, "<iframe[^>]* src=")
 })

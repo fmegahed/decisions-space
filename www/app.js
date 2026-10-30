@@ -103,7 +103,7 @@
   });
 
   // ---- Video dialog (only when the page has one) ---------------------------
-  // Two buttons open it: the one of the intro and the one of the top bar.
+  // Three buttons open it: in the intro, in the top bar and in About.
   // The embed address is set when the dialog opens and cleared when it
   // closes, so nothing loads before a click and the video stops on close.
   // Escape closes the dialog; Tab stays in the dialog. Focus goes back to
@@ -116,12 +116,52 @@
     var closeButton = byId('close_video');
     var lastFocused = null;
 
+    // Captions: the narration is already in the video (a strip under the
+    // app), so the player starts with the captions of YouTube off. YouTube
+    // turns them on for a muted player or for a viewer who chose them once.
+    // The IFrame API (loaded at the first open) clears the caption track
+    // until 3 s after the start; after that, the CC button works as usual.
+    // If the API does not load, the video still plays.
+    var captionsOffUntil = Infinity;
+    var apiRequested = false;
+
+    function captionsOff(player) {
+      try {
+        if (Date.now() < captionsOffUntil && player.getOptions().indexOf('captions') !== -1) {
+          player.setOption('captions', 'track', {});
+        }
+      } catch (e) { /* the player is not ready */ }
+    }
+    function attachPlayer() {
+      if (!(window.YT && YT.Player) || !dialog.open) return;
+      new YT.Player(frame, { events: {
+        onApiChange: function(event) { captionsOff(event.target); },
+        onStateChange: function(event) {
+          if (event.data === 1 && captionsOffUntil === Infinity) {
+            captionsOffUntil = Date.now() + 3000;
+            captionsOff(event.target);
+          }
+        }
+      } });
+    }
+    function loadApi() {
+      if (apiRequested) { attachPlayer(); return; }
+      apiRequested = true;
+      window.onYouTubeIframeAPIReady = attachPlayer;
+      var script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(script);
+    }
+
     Array.prototype.forEach.call(openers, function(opener) {
       opener.addEventListener('click', function() {
         lastFocused = opener;
-        frame.setAttribute('src', frame.getAttribute('data-src'));
+        captionsOffUntil = Infinity;
+        frame.setAttribute('src', frame.getAttribute('data-src') +
+          '?enablejsapi=1&origin=' + encodeURIComponent(window.location.origin));
         dialog.showModal();
         closeButton.focus();
+        loadApi();
       });
     });
     closeButton.addEventListener('click', function() { dialog.close(); });

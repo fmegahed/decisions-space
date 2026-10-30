@@ -390,8 +390,11 @@ video_dialog <- function(url) {
     ),
     shiny::tags$iframe(
       id = "video_frame", class = "video-frame", title = "Help video: how to use the decisions app",
-      `data-src` = video_embed(url), allow = "autoplay; encrypted-media; picture-in-picture; fullscreen",
-      referrerpolicy = "strict-origin-when-cross-origin"
+      # The permissions of the YouTube embed code: clipboard-write lets the
+      # player copy its link, web-share lets it share
+      `data-src` = video_embed(url),
+      allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen",
+      allowfullscreen = NA, referrerpolicy = "strict-origin-when-cross-origin"
     )
   )
 }
