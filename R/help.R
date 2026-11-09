@@ -20,7 +20,15 @@ LINKS <- list(
   source = "https://github.com/fmegahed/decisions-space",
   license = "https://github.com/fmegahed/decisions-space/blob/main/LICENSE",
   issues = "https://github.com/fmegahed/decisions-space/issues",
-  status = "https://github.com/fmegahed/decisions-space/blob/main/status/status.csv"
+  status = "https://github.com/fmegahed/decisions-space/blob/main/status/status.csv",
+  paper = "https://doi.org/10.48550/arXiv.2610.41199"
+)
+
+# The paper of the method (arXiv 2610.41199), as About names and cites it
+PAPER_TITLE <- "Beyond CLIP: Calibrated (Few-Shot) Defect Detection With System One Decision Models"
+PAPER_REFERENCE <- sprintf(
+  "Megahed, F. M., & Chen, Y.-J. (2026). *Beyond CLIP: Calibrated (few-shot) defect detection with System One decision models*. arXiv. %s",
+  LINKS$paper
 )
 
 # The installed version of decisions, as "0.1.0"
@@ -87,8 +95,8 @@ about_text <- function(cfg = app_config()) {
     "## Package",
     "",
     sprintf(
-      "The app uses the R package [decisions](%s), version %s. The [package record](%s) shows how the package was made and tested. The method comes from the paper \"Beyond CLIP: Calibrated (Few-Shot) Defect Detection With Structured Decision Models\" (in preparation). The [project record](%s) holds its decisions and its data.",
-      LINKS$package, package_version_text(), LINKS$package_record, LINKS$project_record
+      "The app uses the R package [decisions](%s), version %s. The [package record](%s) shows how the package was made and tested. The method comes from the paper [\"%s\"](%s) (arXiv, 2026). The [project record](%s) holds its decisions and its data.",
+      LINKS$package, package_version_text(), LINKS$package_record, PAPER_TITLE, LINKS$paper, LINKS$project_record
     ),
     "",
     "## Model",
@@ -134,6 +142,7 @@ about_text <- function(cfg = app_config()) {
       cfg$version, cfg$date, decisions_version(), cfg$model
     ),
     "",
+    "- 1.0.3: About gives the final title of the paper with its arXiv link, and Cite lists the paper.",
     sprintf("- 1.0.2: decisions 0.1.0 from CRAN. The R code, the bundle and Help install it with %s.", DECISIONS_INSTALL),
     "- 1.0.1: the help video (in the intro, the top bar and this page), whose player starts without the captions of YouTube (the narration is in the video) and can copy and share its link; the buttons of the top bar on one line.",
     "- 1.0.0: the first public version.",
@@ -148,6 +157,7 @@ about_text <- function(cfg = app_config()) {
       "- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version %s) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions",
       cfg$version
     ),
+    paste("-", PAPER_REFERENCE),
     "",
     "## Authors",
     "",

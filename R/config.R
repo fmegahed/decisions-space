@@ -4,7 +4,7 @@
 # behaviour.
 
 # Version of this app
-APP_VERSION <- "1.0.2"
+APP_VERSION <- "1.0.3"
 APP_DATE <- "9 November 2026"
 
 # Model used for every call. This is the ONLY place a model id may be written

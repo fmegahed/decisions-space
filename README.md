@@ -89,4 +89,8 @@ Fadel M. Megahed (Miami University) and Ying-Ju (Tessa) Chen (University of Dayt
 If you use the package or the app, cite both:
 
 - Megahed, F. M., & Chen, Y.-J. (2026). *decisions: Typed decisions from decision models* (R package version 0.1.0). https://github.com/fmegahed/decisions
-- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version 1.0.2) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions
+- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version 1.0.3) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions
+
+The method comes from this paper:
+
+- Megahed, F. M., & Chen, Y.-J. (2026). *Beyond CLIP: Calibrated (few-shot) defect detection with System One decision models*. arXiv. https://doi.org/10.48550/arXiv.2610.41199

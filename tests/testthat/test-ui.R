@@ -11,9 +11,9 @@ test_that("the page has the version in a meta tag that the status workflow reads
   meta <- find_tags(app_ui(NULL), "meta") |>
     purrr::keep(\(t) identical(htmltools::tagGetAttribute(t, "name"), "app-version"))
   expect_length(meta, 1)
-  expect_identical(htmltools::tagGetAttribute(meta[[1]], "content"), "1.0.2")
+  expect_identical(htmltools::tagGetAttribute(meta[[1]], "content"), "1.0.3")
   # The same pattern as the grep of .github/workflows/status.yml
-  expect_match(page_html(), '<meta name="app-version" content="1.0.2"', fixed = TRUE)
+  expect_match(page_html(), '<meta name="app-version" content="1.0.3"', fixed = TRUE)
 })
 
 test_that("no label or header says How to read", {
@@ -261,6 +261,10 @@ test_that("About is built from app_config()", {
   expect_match(about, "https://fmegahed.github.io/decisions/record/", fixed = TRUE)
   expect_match(about, "Fadel M. Megahed (Miami University)", fixed = TRUE)
   expect_match(about, "MIT", fixed = TRUE)
+  # The paper: the final title with its arXiv link, and its reference in Cite
+  expect_match(about, '["Beyond CLIP: Calibrated (Few-Shot) Defect Detection With System One Decision Models"](https://doi.org/10.48550/arXiv.2610.41199)', fixed = TRUE)
+  expect_match(about, "- Megahed, F. M., & Chen, Y.-J. (2026). *Beyond CLIP: Calibrated (few-shot) defect detection with System One decision models*. arXiv. https://doi.org/10.48550/arXiv.2610.41199", fixed = TRUE)
+  expect_no_match(about, "in preparation", fixed = TRUE)
   # A change of the configuration changes the text
   local_global("LIMIT_DAY", 3)
   expect_match(help_text("about"), "USD 3 ", fixed = TRUE)
