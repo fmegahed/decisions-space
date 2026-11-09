@@ -255,7 +255,7 @@ run_code <- function(spec, date = Sys.Date(), rows = NULL) {
   if (nrow(refs) > 0) data_arg <- paste0(data_arg, ", references = references")
   paste(
     sprintf("# The run of the decisions Space on %s, in R. Run it with your own key.", format(date)),
-    'library(decisions) # install once: pak::pak("fmegahed/decisions")',
+    paste("library(decisions) # install once:", DECISIONS_INSTALL),
     "",
     paths_comment(spec, refs),
     inputs_code(spec, refs, rows),

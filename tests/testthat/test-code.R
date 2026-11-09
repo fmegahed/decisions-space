@@ -18,7 +18,7 @@ test_that("the textile code has the first comment, the paths comment and system.
   expect_identical(
     lines[1], "# The run of the decisions Space on 2026-11-03, in R. Run it with your own key."
   )
-  expect_identical(lines[2], 'library(decisions) # install once: pak::pak("fmegahed/decisions")')
+  expect_identical(lines[2], 'library(decisions) # install once: install.packages("decisions")')
   expect_true(stringr::str_detect(code, stringr::fixed('system.file("extdata", "textiles", package = "decisions")')))
   expect_true(stringr::str_detect(code, stringr::fixed("# Paths. This run used the sample images of the package")))
   expect_true(stringr::str_detect(code, stringr::fixed("getwd() shows where R looks.")))

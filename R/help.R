@@ -26,9 +26,9 @@ LINKS <- list(
 # The installed version of decisions, as "0.1.0"
 package_version_text <- function() as.character(utils::packageVersion("decisions"))
 
-# The version of decisions and the short commit, as "0.1.0 @ b25fc9f"
+# The version of decisions and where it comes from, as "0.1.0 (CRAN)"
 decisions_version <- function() {
-  sprintf("%s @ %s", package_version_text(), substr(DECISIONS_SHA, 1, 7))
+  sprintf("%s (%s)", package_version_text(), DECISIONS_SOURCE)
 }
 
 # The help text of `key`, as one string. The text of "about" is Markdown.
@@ -49,7 +49,10 @@ help_text <- function(key) {
     ),
     references_score = "A score question takes no references. References attach only to Yes / no and Choice questions.",
     answers = "The answers show here after a run. A run of an unchanged sample shows its saved run, at no cost.",
-    code = "The code repeats this run: the question, the references, the model and one decide() call. Run it in your own R with your TypeSafe key in TYPESAFE_API_KEY. Install the package with pak::pak(\"fmegahed/decisions\"). For your own images, read the comment on paths at the top of the code.",
+    code = sprintf(
+      "The code repeats this run: the question, the references, the model and one decide() call. Run it in your own R with your TypeSafe key in TYPESAFE_API_KEY. Install the package with %s. For your own images, read the comment on paths at the top of the code.",
+      DECISIONS_INSTALL
+    ),
     privacy = "Your images and texts go to TypeSafe (Jev). Do not upload confidential data.",
     record = "A GitHub workflow opens this app twice a day, as a visitor does. Each visit adds a row to a public file. The visit also keeps the app awake. The table shows the last 60 visits.",
     about = about_text(cfg)
@@ -131,6 +134,7 @@ about_text <- function(cfg = app_config()) {
       cfg$version, cfg$date, decisions_version(), cfg$model
     ),
     "",
+    sprintf("- 1.0.2: decisions 0.1.0 from CRAN. The R code, the bundle and Help install it with %s.", DECISIONS_INSTALL),
     "- 1.0.1: the help video (in the intro, the top bar and this page), whose player starts without the captions of YouTube (the narration is in the video) and can copy and share its link; the buttons of the top bar on one line.",
     "- 1.0.0: the first public version.",
     "",

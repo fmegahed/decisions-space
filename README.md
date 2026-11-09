@@ -16,7 +16,7 @@ short_description: Ask Jev a question about each image or text in a set.
 
 This app asks Jev a question about each image or text in a set. Jev is a decision model of TypeSafe. For each input, the app shows the answer and the probability of each answer. It also gives the R code of the run and a bundle with the setup and the answers. A visitor needs no key and no account.
 
-The app uses the R package [decisions](https://github.com/fmegahed/decisions) (version 0.1.0). Two samples run at no cost: textile images and injury reports. Their answers are saved.
+The app uses the R package [decisions](https://github.com/fmegahed/decisions) (version 0.1.0, from [CRAN](https://CRAN.R-project.org/package=decisions)). Two samples run at no cost: textile images and injury reports. Their answers are saved.
 
 Open the app: <https://huggingface.co/spaces/fmegahed/decisions>
 
@@ -89,4 +89,4 @@ Fadel M. Megahed (Miami University) and Ying-Ju (Tessa) Chen (University of Dayt
 If you use the package or the app, cite both:
 
 - Megahed, F. M., & Chen, Y.-J. (2026). *decisions: Typed decisions from decision models* (R package version 0.1.0). https://github.com/fmegahed/decisions
-- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version 1.0.1) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions
+- Megahed, F. M., & Chen, Y.-J. (2026). *decisions Space* (Version 1.0.2) [Web application]. Hugging Face. https://huggingface.co/spaces/fmegahed/decisions

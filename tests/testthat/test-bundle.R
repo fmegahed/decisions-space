@@ -96,7 +96,7 @@ test_that("the README states the versions, the install, the key and the citation
   spec <- upload_spec(labelled = TRUE)
   dir <- unzip_bundle(bundle_of(spec))
   readme <- readr::read_file(file.path(dir, "README.md"))
-  for (x in c(APP_VERSION, DECISIONS_SHA, MODEL, "2026-11-03", 'pak::pak("fmegahed/decisions")', "TYPESAFE_API_KEY", "cite")) {
+  for (x in c(APP_VERSION, "- decisions: 0.1.0 (CRAN)", MODEL, "2026-11-03", 'install.packages("decisions")', "TYPESAFE_API_KEY", "cite")) {
     expect_true(stringr::str_detect(readme, stringr::fixed(x)), info = x)
   }
   expect_false(stringr::str_detect(readme, "n't\\b"))

@@ -33,7 +33,7 @@ jobs:
         with:
           packages: |
             any::shiny
-            url::https://github.com/fmegahed/decisions/archive/b25fc9ffa7908e9a6a2d9833f080de1456c9d50a.tar.gz
+            decisions@0.1.0
             any::mirai
             any::dplyr
             any::purrr

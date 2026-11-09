@@ -4,8 +4,8 @@
 # behaviour.
 
 # Version of this app
-APP_VERSION <- "1.0.1"
-APP_DATE <- "30 October 2026"
+APP_VERSION <- "1.0.2"
+APP_DATE <- "9 November 2026"
 
 # Model used for every call. This is the ONLY place a model id may be written
 # (tests/testthat/test-config.R enforces this).
@@ -14,8 +14,10 @@ MODEL <- "jev-1.14.0"
 # Day of the saved runs of the two samples (their answers record MODEL)
 SAVED_RUN_DATE <- "2026-10-23"
 
-# Commit of the decisions package that the app uses
-DECISIONS_SHA <- "b25fc9ffa7908e9a6a2d9833f080de1456c9d50a"
+# Where the decisions package of the app comes from (the Dockerfile installs
+# 0.1.0 from CRAN), and the install line that the code, the bundle and Help give
+DECISIONS_SOURCE <- "CRAN"
+DECISIONS_INSTALL <- 'install.packages("decisions")'
 
 # Price in USD for each input token (USD 0.042 for each million tokens)
 PRICE_PER_TOKEN <- 0.042 / 1e6

@@ -11,9 +11,9 @@ test_that("the page has the version in a meta tag that the status workflow reads
   meta <- find_tags(app_ui(NULL), "meta") |>
     purrr::keep(\(t) identical(htmltools::tagGetAttribute(t, "name"), "app-version"))
   expect_length(meta, 1)
-  expect_identical(htmltools::tagGetAttribute(meta[[1]], "content"), "1.0.1")
+  expect_identical(htmltools::tagGetAttribute(meta[[1]], "content"), "1.0.2")
   # The same pattern as the grep of .github/workflows/status.yml
-  expect_match(page_html(), '<meta name="app-version" content="1.0.1"', fixed = TRUE)
+  expect_match(page_html(), '<meta name="app-version" content="1.0.2"', fixed = TRUE)
 })
 
 test_that("no label or header says How to read", {
@@ -226,7 +226,7 @@ test_that("the sidebar comes before the cards in the page", {
 test_that("the footer has the versions, the model and the authors", {
   html <- page_html()
   expect_match(html, sprintf("decisions-space %s", APP_VERSION), fixed = TRUE)
-  expect_match(html, sprintf("@ %s", substr(DECISIONS_SHA, 1, 7)), fixed = TRUE)
+  expect_match(html, "decisions 0.1.0 (CRAN)", fixed = TRUE)
   expect_match(html, MODEL, fixed = TRUE)
   expect_match(html, "Ying-Ju (Tessa) Chen (University of Dayton)", fixed = TRUE)
 })
